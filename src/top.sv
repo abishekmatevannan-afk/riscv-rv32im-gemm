@@ -2,7 +2,9 @@
 // Instantiates and connects all modules
 // Handles immediate generation, branch logic, PC selection
 
-module top (
+module top #(
+    parameter HEX_FILE = "programs/test1.hex"
+)(
     input  logic clk,
     input  logic rst
 );
@@ -57,9 +59,9 @@ module top (
         .pc      (pc)
     );
 
-    instruction_memory IMEM (
-        .addr    (pc),
-        .instr   (instr)
+    instruction_memory #(.HEX_FILE(HEX_FILE)) IMEM (
+        .addr  (pc),
+        .instr (instr)
     );
 
     control_unit CU (

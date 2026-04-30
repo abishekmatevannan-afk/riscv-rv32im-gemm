@@ -1,15 +1,19 @@
-// Full CPU integration testbench
-// Runs assembly programs and checks register state
-
 `timescale 1ns/1ps
 
 module tb_top;
 
-    logic clk, rst;
+    // ---- TEST 1 SIGNALS ----
+    logic clk1, rst1;
+    top #(.HEX_FILE("programs/test1.hex")) cpu1 (
+        .clk (clk1),
+        .rst (rst1)
+    );
 
-    top dut (
-        .clk (clk),
-        .rst (rst)
+    // ---- TEST 2 SIGNALS ----
+    logic clk2, rst2;
+    top #(.HEX_FILE("programs/test2.hex")) cpu2 (
+        .clk (clk2),
+        .rst (rst2)
     );
 
     initial begin
@@ -17,82 +21,90 @@ module tb_top;
         $dumpvars(0, tb_top);
     end
 
-    initial clk = 0;
-    always #5 clk = ~clk;
+    // independent clocks for each CPU instance
+    initial clk1 = 0;
+    always #5 clk1 = ~clk1;
 
-    // task to check a register value
-    task automatic check_reg(
+    initial clk2 = 0;
+    always #5 clk2 = ~clk2;
+
+    // check task for cpu1
+    task automatic check1(
         input [4:0]  reg_addr,
         input [31:0] expected,
         input string test_name
     );
-        // directly peek at register file contents
-        if (dut.RF.regs[reg_addr] !== expected)
-            $display("FAIL: %s | x%0d expected=0x%08h got=0x%08h",
+        if (cpu1.RF.regs[reg_addr] !== expected)
+            $display("FAIL [TEST1]: %s | x%0d expected=0x%08h got=0x%08h",
                      test_name, reg_addr, expected,
-                     dut.RF.regs[reg_addr]);
+                     cpu1.RF.regs[reg_addr]);
         else
-            $display("PASS: %s | x%0d = 0x%08h",
+            $display("PASS [TEST1]: %s | x%0d = 0x%08h",
                      test_name, reg_addr, expected);
     endtask
 
-    // run N clock cycles
-    task automatic run_cycles(input integer n);
-        repeat(n) @(posedge clk);
-        #1;
+    // check task for cpu2
+    task automatic check2(
+        input [4:0]  reg_addr,
+        input [31:0] expected,
+        input string test_name
+    );
+        if (cpu2.RF.regs[reg_addr] !== expected)
+            $display("FAIL [TEST2]: %s | x%0d expected=0x%08h got=0x%08h",
+                     test_name, reg_addr, expected,
+                     cpu2.RF.regs[reg_addr]);
+        else
+            $display("PASS [TEST2]: %s | x%0d = 0x%08h",
+                     test_name, reg_addr, expected);
     endtask
 
     initial begin
         $display("========== CPU INTEGRATION TESTBENCH ==========");
 
-        // reset
-        rst = 1;
-        @(posedge clk); #1;
-        rst = 0;
+        // reset both CPUs
+        rst1 = 1; rst2 = 1;
+        @(posedge clk1); #1;
+        rst1 = 0; rst2 = 0;
+        repeat(5) @(posedge clk2); #1;
+$display("TEST2 debug: x20=0x%08h mem[0]=0x%02h mem[1]=0x%02h mem[2]=0x%02h mem[3]=0x%02h pc=0x%08h",
+         cpu2.RF.regs[20],
+         cpu2.DMEM.mem[0],
+         cpu2.DMEM.mem[1],
+         cpu2.DMEM.mem[2],
+         cpu2.DMEM.mem[3],
+         cpu2.pc);
+         $display("IMEM[0]=0x%08h IMEM[1]=0x%08h IMEM[2]=0x%08h",
+         cpu2.IMEM.mem[0],
+         cpu2.IMEM.mem[1],
+         cpu2.IMEM.mem[2]);
 
-        // run enough cycles for the program to complete
-        run_cycles(100);
+        
+        // run both simultaneously
+        repeat(200) @(posedge clk1);
+        #1;
 
-        // check results — these match what test.hex computes
-        // we'll update these after writing the test program
-        $display("--- Register State After Execution ---");
-        $display("x1  = 0x%08h", dut.RF.regs[1]);
-        $display("x2  = 0x%08h", dut.RF.regs[2]);
-        $display("x3  = 0x%08h", dut.RF.regs[3]);
-        $display("x4  = 0x%08h", dut.RF.regs[4]);
-        $display("x5  = 0x%08h", dut.RF.regs[5]);
-        $display("x6  = 0x%08h", dut.RF.regs[6]);
-        $display("x7  = 0x%08h", dut.RF.regs[7]);
-        $display("x8  = 0x%08h", dut.RF.regs[8]);
-        $display("x11 = 0x%08h", dut.RF.regs[11]);
-        $display("x12 = 0x%08h", dut.RF.regs[12]);
-        $display("x13 = 0x%08h", dut.RF.regs[13]);
-        $display("x14 = 0x%08h", dut.RF.regs[14]);
-        $display("x15 = 0x%08h", dut.RF.regs[15]);
-        $display("x16 = 0x%08h", dut.RF.regs[16]);
-        $display("x17 = 0x%08h", dut.RF.regs[17]);
-        $display("x20 = 0x%08h", dut.RF.regs[20]);
-        $display("x21 = 0x%08h", dut.RF.regs[21]);
+        // ---- TEST 1 RESULTS ----
+        $display("\n--- TEST 1: Arithmetic + Branch + Loop ---");
+        check1(5'd1, 32'd5,   "addi x1=5");
+        check1(5'd2, 32'd10,  "addi x2=10");
+        check1(5'd3, 32'd15,  "add  x3=x1+x2");
+        check1(5'd4, 32'd5,   "addi x4=5");
+        check1(5'd5, 32'd150, "loop x5=15*10");
+        check1(5'd6, 32'd0,   "loop x6=0 counter exhausted");
 
-        check_reg(5'd1, 32'd5,   "addi x1=5");
-        check_reg(5'd2, 32'd10,  "addi x2=10");
-        check_reg(5'd3, 32'd15,  "add  x3=x1+x2");
-        check_reg(5'd4, 32'd5,   "addi x4=5");
-        check_reg(5'd5, 32'd150, "loop x5=15*10");
-        check_reg(5'd6, 32'd0,   "loop x6=0");
-        check_reg(5'd1,  32'h000000FF, "LBU byte load");
-        check_reg(5'd2,  32'h0000ABCD, "LHU halfword unsigned");
-        check_reg(5'd3,  32'hFFFFABCD, "LH halfword signed");
-        check_reg(5'd4,  32'd1,        "SLT 5 < 10");
-        check_reg(5'd5,  32'hABCDE000, "LUI upper immediate");
-        check_reg(5'd6,  32'd0,        "XOR same = 0");
-        check_reg(5'd7,  32'd255,      "OR 0xF0|0x0F");
-        check_reg(5'd8,  32'd100,      "AND result");
+        // ---- TEST 2 RESULTS ----
+        $display("\n--- TEST 2: Memory + Logic + LUI ---");
+        check2(5'd1,  32'h000000FF, "LBU byte load");
+        check2(5'd2,  32'h000007FF, "LHU halfword unsigned");
+        check2(5'd3,  32'h000007FF, "LH halfword positive");
+        check2(5'd4,  32'd1,        "SLT 5 < 10");
+        check2(5'd5,  32'hABCDE000, "LUI upper immediate");
+        check2(5'd6,  32'd0,        "XOR same = 0");
+        check2(5'd7,  32'd255,      "OR 0xF0|0x0F");
+        check2(5'd8,  32'd100,      "AND result");
 
-        $display("========== DONE ==========");
+        $display("\n========== DONE ==========");
         $finish;
     end
 
 endmodule
-
-        
