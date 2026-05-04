@@ -4,12 +4,11 @@ SRC_DIR = src
 TB_DIR = tb
 SIM_DIR = sim
 
-# Create sim directory if it doesn't exist
 $(shell mkdir -p $(SIM_DIR))
 
 # Simulate a specific module: make sim MODULE=alu
 sim:
-ifeq ($(MODULE),top)
+ifeq ($(filter $(MODULE),top top_pipeline),$(MODULE))
 	iverilog -g2012 -o $(SIM_DIR)/$(MODULE).vvp \
 		$(TB_DIR)/tb_$(MODULE).sv \
 		$(SRC_DIR)/*.sv && \
@@ -21,7 +20,7 @@ else
 	vvp $(SIM_DIR)/$(MODULE).vvp
 endif
 
-# View waveform: make wave MODULE=alu
+# View waveform
 wave:
 	code $(SIM_DIR)/$(MODULE).vcd
 
@@ -30,7 +29,7 @@ all:
 	@for tb in $(TB_DIR)/tb_*.sv; do \
 		mod=$$(basename $$tb .sv | sed 's/tb_//'); \
 		echo "Simulating $$mod..."; \
-		iverilog -g2012 -o $(SIM_DIR)/$$mod.vvp $$tb $(SRC_DIR)/$$mod.sv && \
+		iverilog -g2012 -o $(SIM_DIR)/$$mod.vvp $$tb $(SRC_DIR)/*.sv && \
 		vvp $(SIM_DIR)/$$mod.vvp; \
 	done
 

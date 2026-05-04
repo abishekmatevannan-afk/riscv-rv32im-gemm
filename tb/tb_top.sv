@@ -65,19 +65,6 @@ module tb_top;
         rst1 = 1; rst2 = 1;
         @(posedge clk1); #1;
         rst1 = 0; rst2 = 0;
-        repeat(5) @(posedge clk2); #1;
-$display("TEST2 debug: x20=0x%08h mem[0]=0x%02h mem[1]=0x%02h mem[2]=0x%02h mem[3]=0x%02h pc=0x%08h",
-         cpu2.RF.regs[20],
-         cpu2.DMEM.mem[0],
-         cpu2.DMEM.mem[1],
-         cpu2.DMEM.mem[2],
-         cpu2.DMEM.mem[3],
-         cpu2.pc);
-         $display("IMEM[0]=0x%08h IMEM[1]=0x%08h IMEM[2]=0x%08h",
-         cpu2.IMEM.mem[0],
-         cpu2.IMEM.mem[1],
-         cpu2.IMEM.mem[2]);
-
         
         // run both simultaneously
         repeat(200) @(posedge clk1);
