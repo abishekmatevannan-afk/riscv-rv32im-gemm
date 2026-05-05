@@ -47,7 +47,11 @@ module id_ex_reg (
     output logic [4:0]  ex_rs2_addr,
     output logic [4:0]  ex_rd_addr,
     output logic [31:0] ex_imm,
-    output logic [6:0]  ex_opcode
+    output logic [6:0]  ex_opcode,
+
+    //SIMD signals
+    input  logic [6:0]  id_funct7,
+    output logic [6:0]  ex_funct7
 );
 
     always_ff @(posedge clk) begin
@@ -89,6 +93,7 @@ module id_ex_reg (
             ex_rd_addr  <= id_rd_addr;
             ex_imm      <= id_imm;
             ex_opcode   <= id_opcode;
+            ex_funct7 <= id_funct7;
         end
     end
 

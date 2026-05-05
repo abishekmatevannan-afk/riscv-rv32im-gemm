@@ -54,6 +54,13 @@ module top_pipeline #(
     logic [31:0] ex_imm;
     logic [6:0]  ex_opcode;
     logic [2:0]  ex_funct3;
+    logic [6:0]  ex_funct7;
+
+    // SIMD signals
+    logic [31:0] simd_result;
+    logic        simd_valid;
+    logic        is_simd;
+    logic [31:0] ex_result;  // final result — ALU or SIMD
 
     // control signals in EX
     logic        ex_reg_we, ex_mem_we, ex_mem_re;
@@ -233,7 +240,9 @@ module top_pipeline #(
         .ex_rs2_addr (ex_rs2_addr),
         .ex_rd_addr  (ex_rd_addr),
         .ex_imm      (ex_imm),
-        .ex_opcode   (ex_opcode)
+        .ex_opcode   (ex_opcode),
+        .id_funct7   (id_funct7),
+        .ex_funct7   (ex_funct7)
     );
 
 
@@ -276,6 +285,21 @@ module top_pipeline #(
         .result   (ex_alu_result),
         .zero     (ex_alu_zero)
     );
+
+    // SIMD ALU
+    assign is_simd = (ex_opcode == 7'b0001011);
+
+    simd_alu SIMD (
+        .a       (ex_fwd_a),
+        .b       (ex_fwd_b),
+        .funct3  (ex_funct3),
+        .funct7  (ex_funct7),
+        .result  (simd_result),
+        .valid   (simd_valid)
+    );
+
+    // select between regular ALU and SIMD result
+    assign ex_result = is_simd ? simd_result : ex_alu_result;
 
     // branch resolution
     logic ex_alu_bit0;
@@ -323,7 +347,7 @@ module top_pipeline #(
         .ex_mem_re     (ex_mem_re),
         .ex_wb_sel     (ex_wb_sel),
         .ex_funct3     (ex_funct3),
-        .ex_alu_result (ex_alu_result),
+        .ex_alu_result (ex_result),   // changed from ex_alu_result
         .ex_alu_zero   (ex_alu_zero),
         .ex_rs2_data   (ex_fwd_b),
         .ex_rd_addr    (ex_rd_addr),

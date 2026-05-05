@@ -37,6 +37,7 @@ module control_unit (
     localparam OP_LUI    = 7'b0110111;
     localparam OP_AUIPC  = 7'b0010111;
     localparam OP_SYSTEM = 7'b1110011;
+    localparam OP_CUSTOM = 7'b0001011;  // custom SIMD opcode
 
     // immediate format select encodings
     localparam IMM_R = 3'b000;
@@ -190,6 +191,15 @@ module control_unit (
             // SYSTEM: treat as NOP for now
             OP_SYSTEM: begin
                 reg_we  = 0;
+            end
+            
+            // CUSTOM: SIMD operations
+            OP_CUSTOM: begin
+                reg_we  = 1;
+                alu_src = 0;        // always register-register
+                wb_sel  = 2'b00;    // write result to rd
+                imm_sel = IMM_R;
+                alu_ctrl = 4'b0000; // alu_ctrl unused for SIMD
             end
 
             default: begin
