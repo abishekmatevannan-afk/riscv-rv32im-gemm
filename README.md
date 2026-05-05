@@ -77,6 +77,8 @@ PDOT maps directly to the multiply-accumulate operation at the core of neural ne
 ---
 
 ## Project Structure
+
+```
 rv32i-core/
 ├── src/
 │   ├── alu.sv                # 32-bit ALU
@@ -108,6 +110,7 @@ rv32i-core/
 │   ├── tb_simd_alu.sv
 │   ├── tb_uart_tx.sv
 │   ├── tb_uart_integration.sv
+│   ├── tb_uart_integration_debug.sv
 │   ├── tb_top.sv
 │   └── tb_top_pipeline.sv
 ├── programs/
@@ -115,6 +118,7 @@ rv32i-core/
 │   ├── test2.hex             # Memory load/store, logic, LUI
 │   └── uart_hello.hex        # UART HELLO transmission program
 └── Makefile
+```
 
 ---
 
