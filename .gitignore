@@ -6,3 +6,10 @@ __pycache__/
 .DS_Store
 **/.DS_Store
 a.out
+a.out
+*.o
+*.vvp
+*.vcd
+sim/
+.DS_Store
+**/.DS_Store
