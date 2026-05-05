@@ -6,6 +6,46 @@ A fully functional RV32I RISC-V processor implemented from scratch in SystemVeri
 
 ## Architecture Overview
 
+```mermaid
+flowchart LR
+    subgraph Pipeline["5-Stage Pipeline"]
+        IF["IF\nInstruction\nFetch"]
+        ID["ID\nInstruction\nDecode"]
+        EX["EX\nExecute"]
+        MEM["MEM\nMemory\nAccess"]
+        WB["WB\nWrite\nBack"]
+        IF --> ID --> EX --> MEM --> WB
+    end
+
+    subgraph Hazard["Hazard Handling"]
+        HU["Hazard Unit\nLoad-use stall\nBranch flush"]
+        FU["Forward Unit\nEX/MEM → EX\nMEM/WB → EX"]
+    end
+
+    subgraph Memory["Memory & Peripherals"]
+        IMEM["Instruction\nMemory\n1KB ROM"]
+        DMEM["Data\nMemory\n1KB RAM"]
+        UART["UART TX\n0xFFFF0000\n9600 baud"]
+    end
+
+    subgraph Extensions["Execution Units"]
+        ALU["ALU\n32-bit"]
+        SIMD["SIMD ALU\nPADD PSUB\nPMUL PDOT"]
+        RF["Register File\n32 × 32-bit"]
+    end
+
+    IF --> IMEM
+    EX --> ALU
+    EX --> SIMD
+    ID --> RF
+    WB --> RF
+    MEM --> DMEM
+    MEM --> UART
+    HU -.stall/flush.-> IF
+    HU -.stall/flush.-> ID
+    FU -.forward.-> EX
+```
+
 ---
 
 ## Features
