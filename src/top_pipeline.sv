@@ -3,11 +3,18 @@
 // Hazard handling: forwarding, load-use stall, branch flush
 
 module top_pipeline #(
-    parameter HEX_FILE = "programs/test1.hex"
+    parameter HEX_FILE = "programs/test1.hex",
+    parameter CLKS_PER_BIT = 10416
 )(
     input logic clk,
-    input logic rst
+    input logic rst,
+    output logic uart_tx_pin
 );
+    // UART signals
+    // =========================================================
+    logic        uart_we;
+    logic [31:0] uart_rd;
+    logic        is_io;
 
     // IF STAGE SIGNALS
     // =========================================================
@@ -344,10 +351,29 @@ module top_pipeline #(
         .addr   (mem_alu_result),
         .wd     (mem_rs2_data),
         .funct3 (mem_funct3),
-        .rd     (mem_read_data)
+        .rd     (mem_read_data),
+        .is_io  (is_io)
     );
 
+    // IO write enable — only write to UART when address is in IO region
+    assign uart_we = mem_mem_we && is_io;
+
+    uart_mem_map #(.CLKS_PER_BIT(CLKS_PER_BIT)) UART_MAP (
+        .clk         (clk),
+        .rst         (rst),
+        .we          (uart_we),
+        .addr        (mem_alu_result),
+        .wd          (mem_rs2_data),
+        .rd          (uart_rd),
+        .uart_tx_pin (uart_tx_pin)
+    );
+    
+
     // MEM/WB pipeline register
+    
+        // select read data from RAM or UART based on address
+    logic [31:0] mem_read_data_mux;
+    assign mem_read_data_mux = is_io ? uart_rd : mem_read_data;
     mem_wb_reg MEM_WB (
         .clk            (clk),
         .rst            (rst),
@@ -355,7 +381,7 @@ module top_pipeline #(
         .mem_wb_sel     (mem_wb_sel),
         .mem_rd_addr    (mem_rd_addr),
         .mem_alu_result (mem_alu_result),
-        .mem_read_data  (mem_read_data),
+        .mem_read_data  (mem_read_data_mux),
         .mem_pc_plus4   (mem_pc_plus4),
         .wb_reg_we      (wb_reg_we),
         .wb_wb_sel      (wb_wb_sel),

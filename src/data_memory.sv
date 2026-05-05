@@ -9,8 +9,11 @@ module data_memory (
     input  logic [31:0] addr,        // byte address
     input  logic [31:0] wd,          // write data
     input  logic [2:0]  funct3,      // determines access width
-    output logic [31:0] rd           // read data
+    output logic [31:0] rd,           // read data
+    output logic        is_io     // high when address is UART region
 );
+    // IO region starts at 0xFFFF0000
+    assign is_io = (addr[31:16] == 16'hFFFF);
 
     // 1KB of data memory — enough for test programs
     logic [7:0] mem [0:1023];
@@ -24,7 +27,7 @@ module data_memory (
 
     // synchronous write
     always_ff @(posedge clk) begin
-        if (we) begin
+        if (we && !is_io) begin
             case (funct3)
                 // SB: store byte
                 3'b000: begin
@@ -53,7 +56,7 @@ module data_memory (
     // asynchronous read with sign extension
     always @* begin
         rd = 32'd0;
-        if (re) begin
+        if (re && !is_io) begin
             case (funct3)
                 // LB: load byte signed
                 3'b000: rd = {{24{mem[addr][7]}}, mem[addr]};

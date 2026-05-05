@@ -8,7 +8,7 @@ $(shell mkdir -p $(SIM_DIR))
 
 # Simulate a specific module: make sim MODULE=alu
 sim:
-ifeq ($(filter $(MODULE),top top_pipeline),$(MODULE))
+ifeq ($(filter $(MODULE),top top_pipeline uart_integration),$(MODULE))
 	iverilog -g2012 -o $(SIM_DIR)/$(MODULE).vvp \
 		$(TB_DIR)/tb_$(MODULE).sv \
 		$(SRC_DIR)/*.sv && \
