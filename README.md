@@ -218,7 +218,7 @@ Polls UART status register and transmits H, E, L, L, O, newline sequentially. Ve
 
 ## What I Learned
 
-Building this project from scratch in SystemVerilog taught me things that coursework alone didnt really cover. The single-cycle implementation was straightforward — the complications came in the pipeline. Getting forwarding right requires thinking precisely about which stage each value is in at every clock cycle. The load-use hazard is a good example of a case where forwarding alone isn't sufficient and you need to stall.
+Building this project from scratch in SystemVerilog taught me things that coursework alone didnt really cover. The single-cycle implementation was straightforward, unfortunately the complications came in the pipeline. Getting forwarding right requires thinking precisely about which stage each value is in at every clock cycle. The load-use hazard is a good example of a case where forwarding alone isn't sufficient and you need to stall.
 
 The UART peripheral taught me about the hardware/software interface aspect that I haven't been exposed to much, the main thing being how a CPU communicates with the outside world through memory-mapped registers and polling. The SIMD extension showed me how ML accelerators are fundamentally just chips that do packed multiply-accumulate very efficiently at scale.
 
