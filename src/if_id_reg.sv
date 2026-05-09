@@ -10,8 +10,10 @@ module if_id_reg (
     input  logic        stall,      // freeze contents on load-use hazard
     input  logic [31:0] if_pc,      // PC from fetch stage
     input  logic [31:0] if_instr,   // instruction from fetch stage
+    input  logic        if_predict_taken, // prediction from fetch stage
     output logic [31:0] id_pc,      // PC to decode stage
-    output logic [31:0] id_instr    // instruction to decode stage
+    output logic [31:0] id_instr,   // instruction to decode stage 
+    output logic        id_predict_taken // prediction to decode stage
 );
 
     // NOP = addi x0, x0, 0 = 0x00000013
@@ -19,11 +21,13 @@ module if_id_reg (
 
     always_ff @(posedge clk) begin
         if (rst || flush) begin
-            id_pc    <= 32'd0;
-            id_instr <= NOP;
+            id_pc            <= 32'd0;
+            id_instr         <= NOP;
+            id_predict_taken <= 0;
         end else if (!stall) begin
-            id_pc    <= if_pc;
-            id_instr <= if_instr;
+            id_pc            <= if_pc;
+            id_instr         <= if_instr;
+            id_predict_taken <= if_predict_taken;
         end
         // if stall: hold current values (do nothing)
     end

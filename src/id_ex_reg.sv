@@ -51,7 +51,10 @@ module id_ex_reg (
 
     //SIMD signals
     input  logic [6:0]  id_funct7,
-    output logic [6:0]  ex_funct7
+    output logic [6:0]  ex_funct7,
+
+    input  logic        id_predict_taken,
+    output logic        ex_predict_taken
 );
 
     always_ff @(posedge clk) begin
@@ -63,18 +66,20 @@ module id_ex_reg (
             ex_mem_we   <= 0;
             ex_mem_re   <= 0;
             ex_alu_src  <= 0;
-            ex_wb_sel   <= 2'b00;
-            ex_branch   <= 0;
-            ex_jump     <= 0;
-            ex_alu_ctrl <= 4'b0000;
-            ex_funct3   <= 3'b000;
-            ex_rs1_data <= 32'd0;
+            ex_wb_sel        <= 2'b00;
+            ex_branch        <= 0;
+            ex_jump          <= 0;
+            ex_alu_ctrl      <= 4'b0000;
+            ex_funct3        <= 3'b000;
+            ex_predict_taken <= 0;
+            ex_rs1_data      <= 32'd0;
             ex_rs2_data <= 32'd0;
             ex_rs1_addr <= 5'd0;
             ex_rs2_addr <= 5'd0;
             ex_rd_addr  <= 5'd0;
             ex_imm      <= 32'd0;
             ex_opcode   <= 7'd0;
+            ex_funct7   <= 7'd0;
         end else begin
             ex_pc       <= id_pc;
             ex_reg_we   <= id_reg_we;
@@ -86,14 +91,15 @@ module id_ex_reg (
             ex_jump     <= id_jump;
             ex_alu_ctrl <= id_alu_ctrl;
             ex_funct3   <= id_funct3;
+            ex_predict_taken <= id_predict_taken;
             ex_rs1_data <= id_rs1_data;
             ex_rs2_data <= id_rs2_data;
             ex_rs1_addr <= id_rs1_addr;
             ex_rs2_addr <= id_rs2_addr;
             ex_rd_addr  <= id_rd_addr;
             ex_imm      <= id_imm;
-            ex_opcode   <= id_opcode;
-            ex_funct7 <= id_funct7;
+            ex_opcode        <= id_opcode;
+            ex_funct7        <= id_funct7;
         end
     end
 

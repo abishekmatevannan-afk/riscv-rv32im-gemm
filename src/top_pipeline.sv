@@ -10,6 +10,12 @@ module top_pipeline #(
     input logic rst,
     output logic uart_tx_pin
 );
+    // Branch predictor signals
+    logic        bp_predict_taken;   // prediction from IF stage
+    logic [31:0] bp_predict_target;  // predicted target from IF stage
+    logic        ex_predict_taken;   // prediction carried to EX stage
+    logic        mispredict;         // misprediction detected in EX
+
     // UART signals
     // =========================================================
     logic        uart_we;
@@ -29,6 +35,7 @@ module top_pipeline #(
     logic [31:0] id_pc;
     logic [31:0] id_instr;
     logic [31:0] id_pc_plus4;
+    logic        id_predict_taken;
     logic [6:0]  id_opcode;
     logic [4:0]  id_rs1_addr, id_rs2_addr, id_rd_addr;
     logic [2:0]  id_funct3;
@@ -117,9 +124,9 @@ module top_pipeline #(
 
     // PC next selection
     // priority: jump > branch taken > stall > sequential
-    assign pc_next = ex_jump         ? ex_pc_jump    :
-                     ex_branch_taken ? ex_pc_branch  :
-                                       if_pc_plus4;
+   assign pc_next = ex_jump         ? ex_pc_jump   :
+                     ex_branch_taken ? ex_pc_branch :
+                                        if_pc_plus4;
 
     program_counter PC (
         .clk     (clk),
@@ -136,14 +143,16 @@ module top_pipeline #(
     
     // IF/ID pipeline register
     if_id_reg IF_ID (
-        .clk      (clk),
-        .rst      (rst),
-        .flush    (if_id_flush),
-        .stall    (if_id_stall),
-        .if_pc    (if_pc),
-        .if_instr (if_instr),
-        .id_pc    (id_pc),
-        .id_instr (id_instr)
+        .clk              (clk),
+        .rst              (rst),
+        .flush            (if_id_flush),
+        .stall            (if_id_stall),
+        .if_pc            (if_pc),
+        .if_instr         (if_instr),
+        .if_predict_taken (bp_predict_taken),
+        .id_pc            (id_pc),
+        .id_instr         (id_instr),
+        .id_predict_taken (id_predict_taken)
     );
 
 
@@ -241,8 +250,10 @@ module top_pipeline #(
         .ex_rd_addr  (ex_rd_addr),
         .ex_imm      (ex_imm),
         .ex_opcode   (ex_opcode),
-        .id_funct7   (id_funct7),
-        .ex_funct7   (ex_funct7)
+        .id_funct7         (id_funct7),
+        .ex_funct7         (ex_funct7),
+        .id_predict_taken  (id_predict_taken),
+        .ex_predict_taken  (ex_predict_taken)
     );
 
 
@@ -338,6 +349,22 @@ module top_pipeline #(
         .forward_b   (forward_b)
     );
 
+    // branch predictor
+    // branch_predictor BP (
+    //     .clk             (clk),
+    //     .rst             (rst),
+    //     .if_pc           (if_pc),
+    //     .predict_taken   (bp_predict_taken),
+    //     .predict_target  (bp_predict_target),
+    //     .ex_branch       (ex_branch),
+    //     .ex_pc           (ex_pc),
+    //     .ex_actual_taken (ex_branch_taken),
+    //     .ex_actual_target(ex_pc_branch)
+    // );
+
+    assign bp_predict_taken = 0;
+    assign bp_predict_target = 32'd0;
+
     // EX/MEM pipeline register
     ex_mem_reg EX_MEM (
         .clk           (clk),
@@ -428,17 +455,18 @@ module top_pipeline #(
     // =========================================================
 
     hazard_unit HU (
-        .ex_mem_re    (ex_mem_re),
-        .ex_rd_addr   (ex_rd_addr),
-        .id_rs1_addr  (id_rs1_addr),
-        .id_rs2_addr  (id_rs2_addr),
-        .ex_branch    (ex_branch),
-        .ex_jump      (ex_jump),
-        .branch_taken (ex_branch_taken),
-        .pc_stall     (pc_stall),
-        .if_id_stall  (if_id_stall),
-        .if_id_flush  (if_id_flush),
-        .id_ex_flush  (id_ex_flush)
+        .ex_mem_re       (ex_mem_re),
+        .ex_rd_addr      (ex_rd_addr),
+        .id_rs1_addr     (id_rs1_addr),
+        .id_rs2_addr     (id_rs2_addr),
+        .ex_branch       (ex_branch),
+        .ex_jump         (ex_jump),
+        .branch_taken    (ex_branch_taken),
+        .ex_predict_taken(ex_predict_taken),
+        .pc_stall        (pc_stall),
+        .if_id_stall     (if_id_stall),
+        .if_id_flush     (if_id_flush),
+        .id_ex_flush     (id_ex_flush)
     );
 
 endmodule

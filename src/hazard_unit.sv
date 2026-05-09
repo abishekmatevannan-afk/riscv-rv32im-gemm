@@ -1,3 +1,8 @@
+//old hazard_unit.sv code:
+    // Detects load-use hazards and branch/jump hazards
+    // Controls pipeline stalls and flushes
+   
+
 // Detects load-use hazards and branch/jump hazards
 // Controls pipeline stalls and flushes
 
@@ -13,6 +18,7 @@ module hazard_unit (
     input  logic       ex_branch,       // is EX stage a branch?
     input  logic       ex_jump,         // is EX stage a jump?
     input  logic       branch_taken,    // was the branch actually taken?
+    input  logic       ex_predict_taken,   // was the branch predicted taken?
 
     // pipeline control outputs
     output logic       pc_stall,        // freeze PC
@@ -34,7 +40,9 @@ module hazard_unit (
     // control hazard:
     // branch taken or unconditional jump
     // need to flush the two wrongly fetched instructions
-    assign control_hazard = (ex_branch && branch_taken) || ex_jump;
+    logic mispredict;
+    assign mispredict = ex_branch && (branch_taken != ex_predict_taken);
+    assign control_hazard = ex_jump;
 
     // stall signals — freeze PC and IF/ID when load-use detected
     assign pc_stall    = load_use_hazard;
