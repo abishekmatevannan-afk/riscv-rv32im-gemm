@@ -10,7 +10,14 @@ module top_pipeline #(
     input logic rst,
     output logic uart_tx_pin
 );
+    // performance counter signals
+    // =========================================================
+    logic        is_perf;
+    logic [31:0] perf_rd;
+    logic        instr_retired;
+
     // Branch predictor signals
+    // =========================================================
     logic        bp_predict_taken;   // prediction from IF stage
     logic [31:0] bp_predict_target;  // predicted target from IF stage
     logic        ex_predict_taken;   // prediction carried to EX stage
@@ -407,7 +414,7 @@ module top_pipeline #(
     );
 
     // IO write enable — only write to UART when address is in IO region
-    assign uart_we = mem_mem_we && is_io;
+    assign uart_we = mem_mem_we && is_io && !is_perf;
 
     uart_mem_map #(.CLKS_PER_BIT(CLKS_PER_BIT)) UART_MAP (
         .clk         (clk),
@@ -424,7 +431,9 @@ module top_pipeline #(
     
         // select read data from RAM or UART based on address
     logic [31:0] mem_read_data_mux;
-    assign mem_read_data_mux = is_io ? uart_rd : mem_read_data;
+    assign mem_read_data_mux = is_perf ? perf_rd   :
+                               is_io   ? uart_rd   :
+                                         mem_read_data;
     mem_wb_reg MEM_WB (
         .clk            (clk),
         .rst            (rst),
@@ -467,6 +476,24 @@ module top_pipeline #(
         .if_id_stall     (if_id_stall),
         .if_id_flush     (if_id_flush),
         .id_ex_flush     (id_ex_flush)
+    );
+
+    // instruction retired — high when valid instruction completes WB
+    // wb_reg_we being high means a real instruction is writing back
+    assign instr_retired = wb_reg_we;
+
+    // performance counter address region: 0xFFFF2000
+    assign is_perf = (mem_alu_result[31:4] == 28'hFFFF200);
+
+    perf_counters PERF (
+        .clk           (clk),
+        .rst           (rst),
+        .re            (mem_mem_re && is_perf),
+        .addr          (mem_alu_result),
+        .rd            (perf_rd),
+        .instr_retired (instr_retired),
+        .branch_exec   (ex_branch),
+        .mispredict    (mispredict)
     );
 
 endmodule
