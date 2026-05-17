@@ -207,6 +207,15 @@ module top_pipeline #(
         .imm_sel  (id_imm_sel)
     );
 
+    // WB forwarding to register file reads
+    // handles the case where WB writes and ID reads same register in same cycle
+    logic [31:0] id_rs1_data_fwd, id_rs2_data_fwd;
+
+    assign id_rs1_data_fwd = (wb_reg_we && wb_rd_addr != 0 && wb_rd_addr == id_rs1_addr)
+                           ? wb_data : id_rs1_data;
+
+    assign id_rs2_data_fwd = (wb_reg_we && wb_rd_addr != 0 && wb_rd_addr == id_rs2_addr)
+                           ? wb_data : id_rs2_data;
     register_file RF (
         .clk (clk),
         .we  (wb_reg_we),
@@ -233,8 +242,8 @@ module top_pipeline #(
         .id_jump     (id_jump),
         .id_alu_ctrl (id_alu_ctrl),
         .id_funct3   (id_funct3),
-        .id_rs1_data (id_rs1_data),
-        .id_rs2_data (id_rs2_data),
+        .id_rs1_data (id_rs1_data_fwd),
+        .id_rs2_data (id_rs2_data_fwd),   // changed
         .id_rs1_addr (id_rs1_addr),
         .id_rs2_addr (id_rs2_addr),
         .id_rd_addr  (id_rd_addr),
@@ -464,18 +473,19 @@ module top_pipeline #(
     // =========================================================
 
     hazard_unit HU (
-        .ex_mem_re       (ex_mem_re),
-        .ex_rd_addr      (ex_rd_addr),
-        .id_rs1_addr     (id_rs1_addr),
-        .id_rs2_addr     (id_rs2_addr),
-        .ex_branch       (ex_branch),
-        .ex_jump         (ex_jump),
-        .branch_taken    (ex_branch_taken),
-        .ex_predict_taken(ex_predict_taken),
-        .pc_stall        (pc_stall),
-        .if_id_stall     (if_id_stall),
-        .if_id_flush     (if_id_flush),
-        .id_ex_flush     (id_ex_flush)
+        .ex_mem_re          (ex_mem_re),
+        .ex_rd_addr         (ex_rd_addr),
+        .id_rs1_addr        (id_rs1_addr),
+        .id_rs2_addr        (id_rs2_addr),
+        .ex_branch          (ex_branch),
+        .ex_jump            (ex_jump),
+        .branch_taken       (ex_branch_taken),
+        .ex_predict_taken   (ex_predict_taken),
+        .pc_stall           (pc_stall),
+        .if_id_stall        (if_id_stall),
+        .if_id_flush        (if_id_flush),
+        .id_ex_flush        (id_ex_flush),
+        .branch_mispredict  (mispredict)
     );
 
     // instruction retired — high when valid instruction completes WB
@@ -483,8 +493,7 @@ module top_pipeline #(
     assign instr_retired = wb_reg_we;
 
     // performance counter address region: 0xFFFF2000
-    assign is_perf = (mem_alu_result[31:4] == 28'hFFFF200);
-
+    assign is_perf = (mem_alu_result[31:4] == 28'hFFFF200); 
     perf_counters PERF (
         .clk           (clk),
         .rst           (rst),

@@ -12,7 +12,10 @@ module instruction_memory #(
 
     logic [31:0] mem [0:255];
 
+    integer im;
     initial begin
+        for (im = 0; im < 256; im++)
+            mem[im] = 32'h00000013;
         $readmemh(HEX_FILE, mem);
     end
 

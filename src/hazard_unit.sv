@@ -24,7 +24,8 @@ module hazard_unit (
     output logic       pc_stall,        // freeze PC
     output logic       if_id_stall,     // freeze IF/ID register
     output logic       if_id_flush,     // flush IF/ID register
-    output logic       id_ex_flush      // flush ID/EX register
+    output logic       id_ex_flush,     // flush ID/EX register
+    output logic       branch_mispredict // branch outcome != IF prediction
 );
 
     logic load_use_hazard;
@@ -40,9 +41,8 @@ module hazard_unit (
     // control hazard:
     // branch taken or unconditional jump
     // need to flush the two wrongly fetched instructions
-    logic mispredict;
-    assign mispredict = ex_branch && (branch_taken != ex_predict_taken);
-    assign control_hazard = ex_jump;
+    assign branch_mispredict = ex_branch && (branch_taken != ex_predict_taken);
+    assign control_hazard = (ex_branch && branch_taken) || ex_jump;
 
     // stall signals — freeze PC and IF/ID when load-use detected
     assign pc_stall    = load_use_hazard;

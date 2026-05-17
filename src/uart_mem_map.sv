@@ -9,17 +9,14 @@ module uart_mem_map #(
     input  logic        clk,
     input  logic        rst,
 
-    // CPU memory interface
-    input  logic        we,          // write enable from CPU
-    input  logic [31:0] addr,        // address from CPU
-    input  logic [31:0] wd,          // write data from CPU
-    output logic [31:0] rd,          // read data to CPU
+    input  logic        we,
+    input  logic [31:0] addr,
+    input  logic [31:0] wd,
+    output logic [31:0] rd,
 
-    // UART physical pins
-    output logic        uart_tx_pin  // connect to FPGA TX pin
+    output logic        uart_tx_pin
 );
 
-    // UART base address
     localparam UART_TX     = 32'hFFFF0000;
     localparam UART_STATUS = 32'hFFFF0004;
 
@@ -28,7 +25,6 @@ module uart_mem_map #(
     logic       tx_busy;
     logic       tx_done;
 
-    // FIFO for buffering multiple writes
     localparam FIFO_DEPTH = 8;
     localparam FIFO_ADDR_WIDTH = $clog2(FIFO_DEPTH);
 
@@ -41,6 +37,10 @@ module uart_mem_map #(
     wire fifo_empty = (fifo_count == 0);
     wire fifo_ready = !fifo_full;
 
+    // One-cycle-delayed enqueue: we_prev is qualified when we asserted on UART_TX.
+    logic        we_prev;
+    logic [7:0]  wd_prev;
+
     uart_tx #(.CLKS_PER_BIT(CLKS_PER_BIT)) UART (
         .clk       (clk),
         .rst       (rst),
@@ -51,6 +51,8 @@ module uart_mem_map #(
         .tx_done   (tx_done)
     );
 
+    // pop/push decided once per cycle inside always_ff (no always_comb around tx_start /
+    // UART feedback — avoids combinational stalls in simulation).
     always_ff @(posedge clk) begin
         if (rst) begin
             tx_start    <= 0;
@@ -58,35 +60,47 @@ module uart_mem_map #(
             fifo_wr_ptr <= 0;
             fifo_rd_ptr <= 0;
             fifo_count  <= 0;
+            we_prev     <= 0;
+            wd_prev     <= 0;
         end else begin
+            logic pop;
+            logic push;
+
             tx_start <= 0;
 
-            // Enqueue CPU write if FIFO has space
-            if (we && addr == UART_TX && !fifo_full) begin
-                tx_fifo[fifo_wr_ptr] <= wd[7:0];
+            pop = 1'b0;
+            if (tx_done && !fifo_empty)
+                pop = 1'b1;
+            else if (!tx_busy && !fifo_empty && !tx_start)
+                pop = 1'b1;
+
+            push = we_prev && !fifo_full;
+
+            if (pop) begin
+                tx_data <= tx_fifo[fifo_rd_ptr];
+                tx_start <= 1;
+                fifo_rd_ptr <= fifo_rd_ptr + 1;
+            end
+            if (push) begin
+                tx_fifo[fifo_wr_ptr] <= wd_prev;
                 fifo_wr_ptr <= fifo_wr_ptr + 1;
-                fifo_count <= fifo_count + 1;
             end
 
-            // Start transmission: fire tx_start once per byte, when UART becomes idle
-            // and FIFO is not empty. Use tx_done as the edge trigger.
-            if (tx_done && !fifo_empty) begin
-                tx_data <= tx_fifo[fifo_rd_ptr];
-                tx_start <= 1;
-                fifo_rd_ptr <= fifo_rd_ptr + 1;
+            if (pop && push)
+                fifo_count <= fifo_count;
+            else if (pop)
                 fifo_count <= fifo_count - 1;
-            end
-            // Also start the first transmission when UART is idle and FIFO has data
-            else if (!tx_busy && !fifo_empty && !tx_start) begin
-                tx_data <= tx_fifo[fifo_rd_ptr];
-                tx_start <= 1;
-                fifo_rd_ptr <= fifo_rd_ptr + 1;
-                fifo_count <= fifo_count - 1;
-            end
+            else if (push)
+                fifo_count <= fifo_count + 1;
+            else
+                fifo_count <= fifo_count;
+
+            we_prev <= we && (addr == UART_TX);
+            if (we && addr == UART_TX)
+                wd_prev <= wd[7:0];
         end
     end
 
-    // status: bit 0 = ready (FIFO not full), bit 1 = busy (transmitting or FIFO not empty)
     assign rd = (addr == UART_STATUS) ? {31'd0, fifo_ready} : 32'd0;
 
 endmodule

@@ -5,22 +5,25 @@ module tb_hazard_unit;
     logic       ex_mem_re;
     logic [4:0] ex_rd_addr;
     logic [4:0] id_rs1_addr, id_rs2_addr;
-    logic       ex_branch, ex_jump, branch_taken;
+    logic       ex_branch, ex_jump, branch_taken, ex_predict_taken;
     logic       pc_stall, if_id_stall;
     logic       if_id_flush, id_ex_flush;
+    logic       branch_mispredict;
 
     hazard_unit dut (
-        .ex_mem_re    (ex_mem_re),
-        .ex_rd_addr   (ex_rd_addr),
-        .id_rs1_addr  (id_rs1_addr),
-        .id_rs2_addr  (id_rs2_addr),
-        .ex_branch    (ex_branch),
-        .ex_jump      (ex_jump),
-        .branch_taken (branch_taken),
-        .pc_stall     (pc_stall),
-        .if_id_stall  (if_id_stall),
-        .if_id_flush  (if_id_flush),
-        .id_ex_flush  (id_ex_flush)
+        .ex_mem_re         (ex_mem_re),
+        .ex_rd_addr        (ex_rd_addr),
+        .id_rs1_addr       (id_rs1_addr),
+        .id_rs2_addr       (id_rs2_addr),
+        .ex_branch         (ex_branch),
+        .ex_jump           (ex_jump),
+        .branch_taken      (branch_taken),
+        .ex_predict_taken  (ex_predict_taken),
+        .pc_stall          (pc_stall),
+        .if_id_stall       (if_id_stall),
+        .if_id_flush       (if_id_flush),
+        .id_ex_flush       (id_ex_flush),
+        .branch_mispredict (branch_mispredict)
     );
 
     task automatic check(
@@ -30,10 +33,11 @@ module tb_hazard_unit;
         input       exp_if_id_flush, exp_id_ex_flush,
         input string name
     );
-        ex_mem_re    = mem_re;
-        ex_branch    = branch;
-        ex_jump      = jump;
-        branch_taken = taken;
+        ex_mem_re        = mem_re;
+        ex_branch        = branch;
+        ex_jump          = jump;
+        branch_taken     = taken;
+        ex_predict_taken = 1'b0;
         ex_rd_addr   = ex_rd;
         id_rs1_addr  = id_rs1;
         id_rs2_addr  = id_rs2;
