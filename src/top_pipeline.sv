@@ -93,6 +93,17 @@ module top_pipeline #(
     // forwarding select signals
     logic [1:0]  forward_a, forward_b;
 
+    // cache signals
+    logic        cache_stall;
+    logic        cache_hit;
+    logic        cache_miss;
+    logic [31:0] cache_rd;
+
+    // pipeline stall signals from hazard unit
+    logic        id_ex_stall;
+    logic        ex_mem_stall;
+    logic        mem_wb_stall;
+
 
     // MEM STAGE SIGNALS
     // =========================================================
@@ -123,6 +134,8 @@ module top_pipeline #(
     logic if_id_stall, if_id_flush;
     logic id_ex_flush;
 
+    
+
 
     // IF STAGE
     // =========================================================
@@ -138,7 +151,8 @@ module top_pipeline #(
     program_counter PC (
         .clk     (clk),
         .rst     (rst),
-        .pc_we   (!pc_stall),
+        .stall   (pc_stall),
+        .pc_we   (1'b1),
         .pc_next (pc_next),
         .pc      (if_pc)
     );
@@ -243,7 +257,7 @@ module top_pipeline #(
         .id_alu_ctrl (id_alu_ctrl),
         .id_funct3   (id_funct3),
         .id_rs1_data (id_rs1_data_fwd),
-        .id_rs2_data (id_rs2_data_fwd),   // changed
+        .id_rs2_data (id_rs2_data_fwd),  
         .id_rs1_addr (id_rs1_addr),
         .id_rs2_addr (id_rs2_addr),
         .id_rd_addr  (id_rd_addr),
@@ -269,7 +283,8 @@ module top_pipeline #(
         .id_funct7         (id_funct7),
         .ex_funct7         (ex_funct7),
         .id_predict_taken  (id_predict_taken),
-        .ex_predict_taken  (ex_predict_taken)
+        .ex_predict_taken  (ex_predict_taken),
+        .stall       (id_ex_stall)
     );
 
 
@@ -383,43 +398,72 @@ module top_pipeline #(
 
     // EX/MEM pipeline register
     ex_mem_reg EX_MEM (
-        .clk           (clk),
-        .rst           (rst),
-        .ex_reg_we     (ex_reg_we),
-        .ex_mem_we     (ex_mem_we),
-        .ex_mem_re     (ex_mem_re),
-        .ex_wb_sel     (ex_wb_sel),
-        .ex_funct3     (ex_funct3),
-        .ex_alu_result (ex_result),   // changed from ex_alu_result
-        .ex_alu_zero   (ex_alu_zero),
-        .ex_rs2_data   (ex_fwd_b),
-        .ex_rd_addr    (ex_rd_addr),
-        .ex_pc_plus4   (ex_pc_plus4),
-        .mem_reg_we    (mem_reg_we),
-        .mem_mem_we    (mem_mem_we),
-        .mem_mem_re    (mem_mem_re),
-        .mem_wb_sel    (mem_wb_sel),
-        .mem_funct3    (mem_funct3),
-        .mem_alu_result(mem_alu_result),
-        .mem_alu_zero  (mem_alu_zero),
-        .mem_rs2_data  (mem_rs2_data),
-        .mem_rd_addr   (mem_rd_addr),
-        .mem_pc_plus4  (mem_pc_plus4)
-    );
+    .clk           (clk),
+    .rst           (rst),
+    .ex_reg_we     (ex_reg_we),
+    .ex_mem_we     (ex_mem_we),
+    .ex_mem_re     (ex_mem_re),
+    .ex_wb_sel     (ex_wb_sel),
+    .ex_funct3     (ex_funct3),
+    .ex_alu_result (ex_result),
+    .ex_alu_zero   (ex_alu_zero),
+    .ex_rs2_data   (ex_fwd_b),
+    .ex_rd_addr    (ex_rd_addr),
+    .ex_pc_plus4   (ex_pc_plus4),
+    .mem_reg_we    (mem_reg_we),
+    .mem_mem_we    (mem_mem_we),
+    .mem_mem_re    (mem_mem_re),
+    .mem_wb_sel    (mem_wb_sel),
+    .mem_funct3    (mem_funct3),
+    .mem_alu_result(mem_alu_result),
+    .mem_alu_zero  (mem_alu_zero),
+    .mem_rs2_data  (mem_rs2_data),
+    .mem_rd_addr   (mem_rd_addr),
+    .mem_pc_plus4  (mem_pc_plus4),
+    .stall         (ex_mem_stall),
+    .flush         (1'b0)              // no flush path needed
+);
 
 
     // MEM STAGE
     // =========================================================
 
+    // backing memory — only sees dcache internal addresses
+    logic        dmem_we, dmem_re;
+    logic [31:0] dmem_addr, dmem_wd, dmem_rd;
+    logic [2:0]  dmem_funct3;
+
     data_memory DMEM (
         .clk    (clk),
-        .we     (mem_mem_we),
-        .re     (mem_mem_re),
-        .addr   (mem_alu_result),
-        .wd     (mem_rs2_data),
-        .funct3 (mem_funct3),
-        .rd     (mem_read_data),
-        .is_io  (is_io)
+        .we     (dmem_we),
+        .re     (dmem_re),
+        .addr   (dmem_addr),
+        .wd     (dmem_wd),
+        .funct3 (dmem_funct3),
+        .rd     (dmem_rd)
+    );
+
+   
+
+    dcache DCACHE (
+        .clk         (clk),
+        .rst         (rst),
+        .cpu_we      (mem_mem_we && !is_io),
+        .cpu_re      (mem_mem_re && !is_io),
+        .cpu_addr    (mem_alu_result),
+        .cpu_wd      (mem_rs2_data),
+        .cpu_funct3  (mem_funct3),
+        .cpu_rd      (cache_rd),
+        .cache_stall (cache_stall),
+        .cache_hit   (cache_hit),
+        .cache_miss  (cache_miss),
+        .mem_we      (dmem_we),
+        .mem_re      (dmem_re),
+        .mem_addr    (dmem_addr),
+        .mem_wd      (dmem_wd),
+        .mem_funct3  (dmem_funct3),
+        .mem_rd      (dmem_rd),
+        .is_io       (is_io)
     );
 
     // IO write enable — only write to UART when address is in IO region
@@ -442,7 +486,7 @@ module top_pipeline #(
     logic [31:0] mem_read_data_mux;
     assign mem_read_data_mux = is_perf ? perf_rd   :
                                is_io   ? uart_rd   :
-                                         mem_read_data;
+                                         cache_rd;
     mem_wb_reg MEM_WB (
         .clk            (clk),
         .rst            (rst),
@@ -457,7 +501,8 @@ module top_pipeline #(
         .wb_rd_addr     (wb_rd_addr),
         .wb_alu_result  (wb_alu_result),
         .wb_read_data   (wb_read_data),
-        .wb_pc_plus4    (wb_pc_plus4)
+        .wb_pc_plus4    (wb_pc_plus4),
+        .stall          (mem_wb_stall)
     );
 
 
@@ -469,31 +514,40 @@ module top_pipeline #(
                                              wb_alu_result;
 
 
+
+
     // HAZARD UNIT
     // =========================================================
 
-    hazard_unit HU (
-        .ex_mem_re          (ex_mem_re),
-        .ex_rd_addr         (ex_rd_addr),
-        .id_rs1_addr        (id_rs1_addr),
-        .id_rs2_addr        (id_rs2_addr),
-        .ex_branch          (ex_branch),
-        .ex_jump            (ex_jump),
-        .branch_taken       (ex_branch_taken),
-        .ex_predict_taken   (ex_predict_taken),
-        .pc_stall           (pc_stall),
-        .if_id_stall        (if_id_stall),
-        .if_id_flush        (if_id_flush),
-        .id_ex_flush        (id_ex_flush),
-        .branch_mispredict  (mispredict)
-    );
+   hazard_unit HU (
+    .ex_mem_re        (ex_mem_re),
+    .ex_rd_addr       (ex_rd_addr),
+    .id_rs1_addr      (id_rs1_addr),
+    .id_rs2_addr      (id_rs2_addr),
+    .ex_branch        (ex_branch),
+    .ex_jump          (ex_jump),
+    .branch_taken     (ex_branch_taken),
+    .ex_predict_taken (ex_predict_taken),
+    .cache_stall      (cache_stall),
+    .pc_stall         (pc_stall),
+    .if_id_stall      (if_id_stall),
+    .if_id_flush      (if_id_flush),
+    .id_ex_stall      (id_ex_stall),
+    .id_ex_flush      (id_ex_flush),
+    .ex_mem_stall     (ex_mem_stall),
+    .mem_wb_stall     (mem_wb_stall),
+    .branch_mispredict(mispredict)
+);
 
     // instruction retired — high when valid instruction completes WB
     // wb_reg_we being high means a real instruction is writing back
     assign instr_retired = wb_reg_we;
 
-    // performance counter address region: 0xFFFF2000
-    assign is_perf = (mem_alu_result[31:4] == 28'hFFFF200); 
+    // performance counter address region is 0xFFFF2000 - 0xFFFF2014
+    // must use mem_alu_result not dcache's internal address
+    assign is_perf = (mem_alu_result[31:8] == 24'hFFFF20);
+    assign is_io   = (mem_alu_result[31:16] == 16'hFFFF) && !is_perf; // IO and perf detection from CPU address directly
+    
     perf_counters PERF (
         .clk           (clk),
         .rst           (rst),
@@ -502,7 +556,9 @@ module top_pipeline #(
         .rd            (perf_rd),
         .instr_retired (instr_retired),
         .branch_exec   (ex_branch),
-        .mispredict    (mispredict)
+        .mispredict    (mispredict),
+        .cache_hit     (cache_hit),
+        .cache_miss    (cache_miss)
     );
 
 endmodule

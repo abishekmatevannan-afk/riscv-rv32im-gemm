@@ -20,12 +20,17 @@ module hazard_unit (
     input  logic       branch_taken,    // was the branch actually taken?
     input  logic       ex_predict_taken,   // was the branch predicted taken?
 
+    input  logic       cache_stall,     // is there a stall from the memory system?
+
     // pipeline control outputs
     output logic       pc_stall,        // freeze PC
     output logic       if_id_stall,     // freeze IF/ID register
     output logic       if_id_flush,     // flush IF/ID register
     output logic       id_ex_flush,     // flush ID/EX register
-    output logic       branch_mispredict // branch outcome != IF prediction
+    output logic       id_ex_stall,      
+    output logic       ex_mem_stall,     
+    output logic       mem_wb_stall,  
+    output logic       branch_mispredict // branch outcome != IF prediction   
 );
 
     logic load_use_hazard;
@@ -42,16 +47,27 @@ module hazard_unit (
     // branch taken or unconditional jump
     // need to flush the two wrongly fetched instructions
     assign branch_mispredict = ex_branch && (branch_taken != ex_predict_taken);
-    assign control_hazard = (ex_branch && branch_taken) || ex_jump;
+    assign control_hazard    = (ex_branch && branch_taken) || ex_jump;
 
     // stall signals — freeze PC and IF/ID when load-use detected
-    assign pc_stall    = load_use_hazard;
-    assign if_id_stall = load_use_hazard;
+    // cache stall: freeze entire pipeline behind MEM stage
+    assign pc_stall     = load_use_hazard || cache_stall;
+    assign if_id_stall  = load_use_hazard || cache_stall;
+    assign id_ex_stall  = cache_stall;
+    assign ex_mem_stall = cache_stall;
+    assign mem_wb_stall = cache_stall;
 
     // flush signals
     // load-use: flush ID/EX only (insert bubble into EX)
     // control:  flush IF/ID and ID/EX (remove wrong instructions)
-    assign id_ex_flush = load_use_hazard || control_hazard;
-    assign if_id_flush = control_hazard;
+    assign id_ex_flush = (load_use_hazard || control_hazard) && !cache_stall;
+    assign if_id_flush = control_hazard && !cache_stall;
+
+
+
+
+
+    
+
 
 endmodule

@@ -7,7 +7,7 @@ module tb_instruction_memory;
     logic [31:0] addr;
     logic [31:0] instr;
 
-    instruction_memory dut (
+    instruction_memory #(.HEX_FILE("programs/nop.hex")) dut (
         .addr  (addr),
         .instr (instr)
     );

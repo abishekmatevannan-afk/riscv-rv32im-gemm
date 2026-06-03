@@ -6,6 +6,7 @@ module id_ex_reg (
     input  logic        clk,
     input  logic        rst,
     input  logic        flush,
+    input  logic        stall,
 
     // PC
     input  logic [31:0] id_pc,
@@ -80,7 +81,7 @@ module id_ex_reg (
             ex_imm      <= 32'd0;
             ex_opcode   <= 7'd0;
             ex_funct7   <= 7'd0;
-        end else begin
+        end else if (!stall) begin
             ex_pc       <= id_pc;
             ex_reg_we   <= id_reg_we;
             ex_mem_we   <= id_mem_we;
@@ -100,6 +101,7 @@ module id_ex_reg (
             ex_imm      <= id_imm;
             ex_opcode        <= id_opcode;
             ex_funct7        <= id_funct7;
+            ex_predict_taken<= id_predict_taken;
         end
     end
 

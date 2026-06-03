@@ -2,13 +2,14 @@
 
 module tb_program_counter;
 
-    logic        clk, rst, pc_we;
+    logic        clk, rst, stall, pc_we;
     logic [31:0] pc_next;
     logic [31:0] pc;
 
     program_counter dut (
         .clk     (clk),
         .rst     (rst),
+        .stall   (stall),
         .pc_we   (pc_we),
         .pc_next (pc_next),
         .pc      (pc)
@@ -26,7 +27,7 @@ module tb_program_counter;
         $display("========== PROGRAM COUNTER TESTBENCH ==========");
 
         // initialize
-        rst = 1; pc_we = 0; pc_next = 0;
+        rst = 1; stall = 0; pc_we = 0; pc_next = 0;
         @(posedge clk); #1;
 
         // test 1: reset holds PC at 0

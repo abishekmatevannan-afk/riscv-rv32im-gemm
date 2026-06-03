@@ -9,14 +9,17 @@ module data_memory (
     input  logic [31:0] addr,        // byte address
     input  logic [31:0] wd,          // write data
     input  logic [2:0]  funct3,      // determines access width
-    output logic [31:0] rd,           // read data
-    output logic        is_io     // high when address is UART region
+    output logic [31:0] rd            // read data
+   
 );
     // IO region starts at 0xFFFF0000
-    assign is_io = (addr[31:16] == 16'hFFFF);
+    
 
     // 1KB of data memory — enough for test programs
     logic [7:0] mem [0:1023];
+    logic [9:0] addr_idx;
+
+    assign addr_idx = addr[9:0];
 
     // initialize memory to zero
     integer i;
@@ -27,60 +30,38 @@ module data_memory (
 
     // synchronous write
     always_ff @(posedge clk) begin
-        if (we && !is_io) begin
+        if (we) begin
             case (funct3)
-                // SB: store byte
-                3'b000: begin
-                    mem[addr] <= wd[7:0];
-                end
-
-                // SH: store halfword
+                3'b000: mem[addr_idx]   <= wd[7:0];
                 3'b001: begin
-                    mem[addr]   <= wd[7:0];
-                    mem[addr+1] <= wd[15:8];
+                    mem[addr_idx]   <= wd[7:0];
+                    mem[addr_idx+1] <= wd[15:8];
                 end
-
-                // SW: store word
                 3'b010: begin
-                    mem[addr]   <= wd[7:0];
-                    mem[addr+1] <= wd[15:8];
-                    mem[addr+2] <= wd[23:16];
-                    mem[addr+3] <= wd[31:24];
+                    mem[addr_idx]   <= wd[7:0];
+                    mem[addr_idx+1] <= wd[15:8];
+                    mem[addr_idx+2] <= wd[23:16];
+                    mem[addr_idx+3] <= wd[31:24];
                 end
-
-                default: ; // do nothing on unknown funct3
+                default: ;
             endcase
         end
     end
 
-    // asynchronous read with sign extension
-    always @* begin
-        rd = 32'd0;
-        if (re && !is_io) begin
-            case (funct3)
-                // LB: load byte signed
-                3'b000: rd = {{24{mem[addr][7]}}, mem[addr]};
+    logic [7:0] byte0, byte1, byte2, byte3;
 
-                // LH: load halfword signed
-                3'b001: rd = {{16{mem[addr+1][7]}},
-                               mem[addr+1],
-                               mem[addr]};
+    assign byte0 = mem[addr_idx];
+    assign byte1 = mem[addr_idx+1];
+    assign byte2 = mem[addr_idx+2];
+    assign byte3 = mem[addr_idx+3];
 
-                // LW: load word
-                3'b010: rd = {mem[addr+3],
-                               mem[addr+2],
-                               mem[addr+1],
-                               mem[addr]};
-
-                // LBU: load byte unsigned
-                3'b100: rd = {24'd0, mem[addr]};
-
-                // LHU: load halfword unsigned
-                3'b101: rd = {16'd0, mem[addr+1], mem[addr]};
-
-                default: rd = 32'd0;
-            endcase
-        end
-    end
+    assign rd = re ? (
+        (funct3 == 3'b000) ? {{24{byte0[7]}}, byte0} :
+        (funct3 == 3'b001) ? {{16{byte1[7]}}, byte1, byte0} :
+        (funct3 == 3'b010) ? {byte3, byte2, byte1, byte0} :
+        (funct3 == 3'b100) ? {24'd0, byte0} :
+        (funct3 == 3'b101) ? {16'd0, byte1, byte0} :
+        32'd0
+    ) : 32'd0;
 
 endmodule

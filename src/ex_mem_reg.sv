@@ -3,6 +3,8 @@
 module ex_mem_reg (
     input  logic        clk,
     input  logic        rst,
+    input  logic        stall,
+    input logic         flush,
 
     // control signals
     input  logic        ex_reg_we,
@@ -32,7 +34,7 @@ module ex_mem_reg (
 );
 
     always_ff @(posedge clk) begin
-        if (rst) begin
+        if (rst || flush) begin
             mem_reg_we     <= 0;
             mem_mem_we     <= 0;
             mem_mem_re     <= 0;
@@ -43,7 +45,7 @@ module ex_mem_reg (
             mem_rs2_data   <= 32'd0;
             mem_rd_addr    <= 5'd0;
             mem_pc_plus4   <= 32'd0;
-        end else begin
+        end else if (!stall) begin
             mem_reg_we     <= ex_reg_we;
             mem_mem_we     <= ex_mem_we;
             mem_mem_re     <= ex_mem_re;

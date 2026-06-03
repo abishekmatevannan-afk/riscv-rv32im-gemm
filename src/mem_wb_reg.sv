@@ -3,6 +3,7 @@
 module mem_wb_reg (
     input  logic        clk,
     input  logic        rst,
+    input  logic        stall,
 
     // control signals
     input  logic        mem_reg_we,
@@ -31,7 +32,7 @@ module mem_wb_reg (
             wb_alu_result <= 32'd0;
             wb_read_data  <= 32'd0;
             wb_pc_plus4   <= 32'd0;
-        end else begin
+        end else if (!stall) begin
             wb_reg_we     <= mem_reg_we;
             wb_wb_sel     <= mem_wb_sel;
             wb_rd_addr    <= mem_rd_addr;
