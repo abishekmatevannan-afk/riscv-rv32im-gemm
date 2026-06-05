@@ -11,6 +11,7 @@ module tb_hazard_unit;
     logic       id_ex_stall, ex_mem_stall, mem_wb_stall;
     logic       branch_mispredict;
     logic       cache_stall;
+    logic       icache_stall;
 
     hazard_unit dut (
         .ex_mem_re        (ex_mem_re),
@@ -22,6 +23,7 @@ module tb_hazard_unit;
         .branch_taken     (branch_taken),
         .ex_predict_taken (ex_predict_taken),
         .cache_stall      (cache_stall),
+        .icache_stall     (icache_stall),
         .pc_stall         (pc_stall),
         .if_id_stall      (if_id_stall),
         .if_id_flush      (if_id_flush),
@@ -45,6 +47,7 @@ module tb_hazard_unit;
         branch_taken     = taken;
         ex_predict_taken = 1'b0;
         cache_stall  = cs;
+        icache_stall = 1'b0;
         ex_rd_addr   = ex_rd;
         id_rs1_addr  = id_rs1;
         id_rs2_addr  = id_rs2;

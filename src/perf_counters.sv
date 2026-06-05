@@ -16,7 +16,10 @@ module perf_counters (
     input  logic        branch_exec,     // high when branch in EX stage
     input  logic        mispredict,      // high when branch mispredicted
     input  logic        cache_hit,
-    input  logic        cache_miss
+    input  logic        cache_miss,
+    input  logic        icache_hit,
+    input  logic        icache_miss
+
 
 );
 
@@ -27,6 +30,8 @@ module perf_counters (
     localparam MISPREDICT_ADDR = 32'hFFFF200C;
     localparam CACHE_HIT_ADDR  = 32'hFFFF2010;
     localparam CACHE_MISS_ADDR = 32'hFFFF2014; 
+    localparam ICACHE_HIT_ADDR  = 32'hFFFF2018;
+    localparam ICACHE_MISS_ADDR = 32'hFFFF201C;
 
     // 32-bit counters
     logic [31:0] cycle_count;
@@ -35,6 +40,8 @@ module perf_counters (
     logic [31:0] mispredict_count;
     logic [31:0] cache_hit_count;
     logic [31:0] cache_miss_count;
+    logic [31:0] icache_hit_count;
+    logic [31:0] icache_miss_count;
 
     // cycle counter — increments every clock
     always_ff @(posedge clk) begin
@@ -80,6 +87,16 @@ module perf_counters (
         else if (cache_miss) cache_miss_count <= cache_miss_count + 1;
     end
 
+    always_ff @(posedge clk) begin                    // NEW
+        if (rst)            icache_hit_count <= 0;
+        else if (icache_hit)  icache_hit_count <= icache_hit_count + 1;
+    end
+
+    always_ff @(posedge clk) begin                    // NEW
+        if (rst)             icache_miss_count <= 0;
+        else if (icache_miss)  icache_miss_count <= icache_miss_count + 1;
+    end
+
     // read logic
     always_comb begin
         rd = 32'd0;
@@ -91,6 +108,8 @@ module perf_counters (
                 MISPREDICT_ADDR: rd = mispredict_count;
                 CACHE_HIT_ADDR:  rd = cache_hit_count;
                 CACHE_MISS_ADDR: rd = cache_miss_count;
+                ICACHE_HIT_ADDR: rd = icache_hit_count;
+                ICACHE_MISS_ADDR: rd = icache_miss_count;
                 default:         rd = 32'd0;
             endcase
         end

@@ -101,7 +101,6 @@ module id_ex_reg (
             ex_imm      <= id_imm;
             ex_opcode        <= id_opcode;
             ex_funct7        <= id_funct7;
-            ex_predict_taken<= id_predict_taken;
         end
     end
 

@@ -27,43 +27,38 @@ module tb_top_pipeline;
     initial clk2 = 0;
     always #5 clk2 = ~clk2;
 
+    always @(posedge clk1) begin
+        if (cpu1.ex_branch && cpu1.ex_funct3 == 3'b001)
+            $display("t=%0t BNE in EX: fwd_a=%08h fwd_b=%08h taken=%b predict=%b mispredict=%b icache_stall=%b cache_stall=%b if_id_flush=%b",
+                $time, cpu1.ex_fwd_a, cpu1.ex_fwd_b,
+                cpu1.ex_branch_taken, cpu1.ex_predict_taken,
+                cpu1.mispredict, cpu1.icache_stall,
+                cpu1.cache_stall, cpu1.if_id_flush);
+    end
+
+    always @(posedge clk1) begin
+        if (cpu1.mispredict && !cpu1.if_id_flush)
+            $display("t=%0t MISPREDICT SUPPRESSED: icache_stall=%b cache_stall=%b",
+                $time, cpu1.icache_stall, cpu1.cache_stall);
+    end
+
+    always @(posedge clk1) begin
+        if (cpu1.if_pc > 32'h30 && cpu1.if_pc < 32'hFFFF0000)
+            $display("t=%0t PC ESCAPED: if_pc=%08h bp_predict_taken=%b bp_target=%08h",
+                $time, cpu1.if_pc, cpu1.bp_predict_taken, cpu1.bp_predict_target);
+    end
+
     // =========================================================
     // DEBUG PROBES — fires every cycle cpu_we=1 reaches dcache
     // =========================================================
 
-   // probe 1: track SH (instr=0x01501223) moving through each stage
-always @(posedge clk2) begin
-    if (cpu2.id_instr == 32'h01501223)
-        $display("t=%0t SH in ID", $time);
-end
-
-always @(posedge clk2) begin
-    if (cpu2.ex_mem_we && cpu2.ex_funct3 == 3'b001 && cpu2.ex_opcode == 7'b0100011)
-        $display("t=%0t SH in EX: alu_result=%08h fwd_b=%08h",
-            $time, cpu2.ex_alu_result, cpu2.ex_fwd_b);
-end
-
-always @(posedge clk2) begin
-    if (cpu2.mem_mem_we && cpu2.mem_funct3 == 3'b001)
-        $display("t=%0t SH in MEM: addr=%08h rs2=%08h is_io=%b cpu_we=%b",
-            $time, cpu2.mem_alu_result, cpu2.mem_rs2_data,
-            cpu2.is_io, cpu2.DCACHE.cpu_we);
-end
-
-always @(posedge clk2) begin
-    if (cpu2.id_instr == 32'h0ff00a13 || cpu2.id_instr == 32'h01400023 || cpu2.id_instr == 32'h00004083 ||
-        cpu2.id_instr == 32'h7ff00a93 || cpu2.id_instr == 32'h01501223 || cpu2.id_instr == 32'h00405103 ||
-        cpu2.id_instr == 32'h00401183 || cpu2.id_instr == 32'h00500593 || cpu2.id_instr == 32'h00a00613 ||
-        cpu2.id_instr == 32'h00c5a233 || cpu2.id_instr == 32'habcde2b7) begin
-        $display("t=%0t DECODE ID pc=0x%08h instr=0x%08h x11=%08h x12=%08h x21=%08h x4=%08h x2=%08h x3=%08h stall=%b state=%b",
-                 $time, cpu2.id_pc, cpu2.id_instr, cpu2.RF.regs[11], cpu2.RF.regs[12], cpu2.RF.regs[21], cpu2.RF.regs[4], cpu2.RF.regs[2], cpu2.RF.regs[3], cpu2.cache_stall, cpu2.DCACHE.state);
-    end
-end
+   
     task automatic check1(
         input [4:0]  reg_addr,
         input [31:0] expected,
         input string test_name
     );
+    
         if (cpu1.RF.regs[reg_addr] !== expected)
             $display("FAIL [TEST1]: %s | x%0d expected=0x%08h got=0x%08h",
                      test_name, reg_addr, expected, cpu1.RF.regs[reg_addr]);
@@ -111,6 +106,22 @@ end
     end
         repeat(600) @(posedge clk1);
         #1;
+        
+
+        // add after repeat(600)
+$display("icache line 0: valid=%b tag=%06h data=%08h %08h %08h %08h",
+    cpu1.ICACHE.valid[0], cpu1.ICACHE.tags[0],
+    cpu1.ICACHE.data[0][0], cpu1.ICACHE.data[0][1],
+    cpu1.ICACHE.data[0][2], cpu1.ICACHE.data[0][3]);
+$display("icache line 1: valid=%b tag=%06h data=%08h %08h %08h %08h",
+    cpu1.ICACHE.valid[1], cpu1.ICACHE.tags[1],
+    cpu1.ICACHE.data[1][0], cpu1.ICACHE.data[1][1],
+    cpu1.ICACHE.data[1][2], cpu1.ICACHE.data[1][3]);
+$display("icache line 2: valid=%b tag=%06h data=%08h %08h %08h %08h",
+    cpu1.ICACHE.valid[2], cpu1.ICACHE.tags[2],
+    cpu1.ICACHE.data[2][0], cpu1.ICACHE.data[2][1],
+    cpu1.ICACHE.data[2][2], cpu1.ICACHE.data[2][3]);
+$display("x5=0x%08h x6=0x%08h", cpu1.RF.regs[5], cpu1.RF.regs[6]);
 
         $display("\n--- DCACHE STATE DUMP ---");
         $display("dcache line 0: valid=%b dirty=%b tag=%06h data=%08h %08h %08h %08h",

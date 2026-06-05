@@ -21,6 +21,7 @@ module hazard_unit (
     input  logic       ex_predict_taken,   // was the branch predicted taken?
 
     input  logic       cache_stall,     // is there a stall from the memory system?
+    input  logic       icache_stall,    
 
     // pipeline control outputs
     output logic       pc_stall,        // freeze PC
@@ -47,15 +48,22 @@ module hazard_unit (
     // branch taken or unconditional jump
     // need to flush the two wrongly fetched instructions
     assign branch_mispredict = ex_branch && (branch_taken != ex_predict_taken);
-    assign control_hazard    = (ex_branch && branch_taken) || ex_jump;
+    assign control_hazard    = branch_mispredict || ex_jump;
 
-    // stall signals — freeze PC and IF/ID when load-use detected
-    // cache stall: freeze entire pipeline behind MEM stage
-    assign pc_stall     = load_use_hazard || cache_stall;
-    assign if_id_stall  = load_use_hazard || cache_stall;
-    assign id_ex_stall  = cache_stall;
-    assign ex_mem_stall = cache_stall;
-    assign mem_wb_stall = cache_stall;
+    // pc_stall: release icache stall when a branch/jump correction fires.
+    // if_id_flush being high means EX has resolved a misprediction or jump --
+    // the PC must take pc_next (the corrected target) immediately.
+    // Holding pc_stall high here would trap the PC at the wrong address.
+    assign pc_stall     = load_use_hazard || cache_stall || (icache_stall && !if_id_flush);
+
+    // if_id_stall: hold IF/ID frozen during icache fill.
+    // if_id_flush takes priority in the IF/ID register (flush > stall),
+    // so a simultaneous branch correction still clears the wrong instruction.
+    assign if_id_stall  = load_use_hazard || cache_stall || icache_stall;
+    
+    assign id_ex_stall  = cache_stall || icache_stall;
+    assign ex_mem_stall = cache_stall || icache_stall;
+    assign mem_wb_stall = cache_stall || icache_stall;
 
     // flush signals
     // load-use: flush ID/EX only (insert bubble into EX)

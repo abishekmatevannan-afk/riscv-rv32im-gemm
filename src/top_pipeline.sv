@@ -36,6 +36,7 @@ module top_pipeline #(
     logic [31:0] if_instr;
     logic [31:0] pc_next;
     logic        pc_stall;
+    logic        if_is_branch;
 
     // ID STAGE SIGNALS
     // =========================================================
@@ -134,19 +135,29 @@ module top_pipeline #(
     logic if_id_stall, if_id_flush;
     logic id_ex_flush;
 
-    
+    // icache signals
+    logic        icache_stall;
+    logic        icache_hit;
+    logic        icache_miss;
+    logic [31:0] icache_rd;
+    logic        ic_mem_re;
+    logic [31:0] ic_mem_addr;
+    logic [31:0] ic_mem_rd;
 
 
     // IF STAGE
     // =========================================================
 
     assign if_pc_plus4 = if_pc + 32'd4;
+    assign if_is_branch = (if_instr[6:0] == 7'b1100011);
 
     // PC next selection
-    // priority: jump > branch taken > stall > sequential
-   assign pc_next = ex_jump         ? ex_pc_jump   :
-                     ex_branch_taken ? ex_pc_branch :
-                                        if_pc_plus4;
+    // priority: jump > branch prediction / corrected branch > sequential
+    assign pc_next = ex_jump                               ? ex_pc_jump                            :
+                     mispredict                                ? (ex_branch_taken ? ex_pc_branch
+                                                                   : ex_pc_plus4)       :
+                     bp_predict_taken                         ? bp_predict_target                       :
+                     if_pc_plus4;
 
     program_counter PC (
         .clk     (clk),
@@ -157,11 +168,37 @@ module top_pipeline #(
         .pc      (if_pc)
     );
 
-    instruction_memory #(.HEX_FILE(HEX_FILE)) IMEM (
-        .addr  (if_pc),
-        .instr (if_instr)
+    branch_predictor BP (
+    .clk             (clk),
+    .rst             (rst),
+    .if_pc           (if_pc),
+    .predict_taken   (bp_predict_taken),
+    .predict_target  (bp_predict_target),
+    .ex_branch       (ex_branch),
+    .ex_pc           (ex_pc),
+    .ex_actual_taken (ex_branch_taken),
+    .ex_actual_target(ex_pc_branch)
     );
-    
+
+    instruction_memory #(.HEX_FILE(HEX_FILE)) IMEM (
+        .addr  (ic_mem_addr),
+        .instr (ic_mem_rd)
+    );
+    icache ICACHE (
+        .clk         (clk),
+        .rst         (rst),
+        .flush       (if_id_flush),   // abort fill on branch/jump correction
+        .cpu_re      (1'b1),          // fetch every cycle
+        .cpu_addr    (if_pc),
+        .cpu_rd      (if_instr),      // replaces direct IMEM.instr
+        .icache_stall(icache_stall),
+        .icache_hit  (icache_hit),
+        .icache_miss (icache_miss),
+        .mem_re      (ic_mem_re),
+        .mem_addr    (ic_mem_addr),
+        .mem_rd      (ic_mem_rd)
+    );
+
     // IF/ID pipeline register
     if_id_reg IF_ID (
         .clk              (clk),
@@ -380,22 +417,6 @@ module top_pipeline #(
         .forward_b   (forward_b)
     );
 
-    // branch predictor
-    // branch_predictor BP (
-    //     .clk             (clk),
-    //     .rst             (rst),
-    //     .if_pc           (if_pc),
-    //     .predict_taken   (bp_predict_taken),
-    //     .predict_target  (bp_predict_target),
-    //     .ex_branch       (ex_branch),
-    //     .ex_pc           (ex_pc),
-    //     .ex_actual_taken (ex_branch_taken),
-    //     .ex_actual_target(ex_pc_branch)
-    // );
-
-    assign bp_predict_taken = 0;
-    assign bp_predict_target = 32'd0;
-
     // EX/MEM pipeline register
     ex_mem_reg EX_MEM (
     .clk           (clk),
@@ -529,6 +550,7 @@ module top_pipeline #(
     .branch_taken     (ex_branch_taken),
     .ex_predict_taken (ex_predict_taken),
     .cache_stall      (cache_stall),
+    .icache_stall     (icache_stall),
     .pc_stall         (pc_stall),
     .if_id_stall      (if_id_stall),
     .if_id_flush      (if_id_flush),
@@ -558,7 +580,9 @@ module top_pipeline #(
         .branch_exec   (ex_branch),
         .mispredict    (mispredict),
         .cache_hit     (cache_hit),
-        .cache_miss    (cache_miss)
+        .cache_miss    (cache_miss),
+        .icache_hit    (icache_hit),
+        .icache_miss   (icache_miss)
     );
 
 endmodule
