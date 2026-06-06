@@ -14,17 +14,28 @@ module control_unit (
     output logic        branch,      // is a branch instruction
     output logic        jump,        // is a jump instruction
     output logic [3:0]  alu_ctrl,    // ALU operation
-    output logic [2:0]  imm_sel      // immediate format select
+    output logic [2:0]  imm_sel,      // immediate format select
+    // exception outputs
+    output logic        illegal,     // unrecognized or malformed instruction
+    output logic        ecall,       // ECALL instruction
+    output logic        mret,        // MRET instruction
+ 
+    // CSR outputs
+    output logic        csr_we,      // write to a CSR this cycle
+    output logic [11:0] csr_addr,    // CSR address (instr[31:20])
+    output logic [2:0]  csr_funct3   // CSR operation type (CSRRW/CSRRS/etc.)
 );
 
     // extract instruction fields
     logic [6:0] opcode;
     logic [2:0] funct3;
     logic [6:0] funct7;
+    logic [11:0] funct12;  // for SYSTEM instructions, use full imm[11:0] as funct
 
     assign opcode = instr[6:0];
     assign funct3 = instr[14:12];
     assign funct7 = instr[31:25];
+    assign funct12 = instr[11:0];
 
     // opcode definitions
     localparam OP_R      = 7'b0110011;
@@ -60,17 +71,33 @@ module control_unit (
     localparam ALU_SLTU = 4'b1001;
     localparam ALU_LUI  = 4'b1010;
 
+    // ECALL:  opcode=SYSTEM funct3=000 funct12=000000000000
+    // EBREAK: opcode=SYSTEM funct3=000 funct12=000000000001 (treat as NOP)
+    // MRET:   opcode=SYSTEM funct3=000 funct12=001100000010
+    // CSRRW:  opcode=SYSTEM funct3=001
+    // CSRRS:  opcode=SYSTEM funct3=010
+    // CSRRC:  opcode=SYSTEM funct3=011
+    // CSRRWI: opcode=SYSTEM funct3=101
+    // CSRRSI: opcode=SYSTEM funct3=110
+    // CSRRCI: opcode=SYSTEM funct3=111
+ 
     always @* begin
-        // safe defaults — prevents latches
-        reg_we   = 0;
-        mem_we   = 0;
-        mem_re   = 0;
-        alu_src  = 0;
-        wb_sel   = 2'b00;
-        branch   = 0;
-        jump     = 0;
-        alu_ctrl = ALU_ADD;
-        imm_sel  = IMM_R;
+        // safe defaults
+        reg_we     = 0;
+        mem_we     = 0;
+        mem_re     = 0;
+        alu_src    = 0;
+        wb_sel     = 2'b00;
+        branch     = 0;
+        jump       = 0;
+        alu_ctrl   = ALU_ADD;
+        imm_sel    = IMM_R;
+        illegal    = 0;
+        ecall      = 0;
+        mret       = 0;
+        csr_we     = 0;
+        csr_addr   = 12'd0;
+        csr_funct3 = 3'd0;
 
         case (opcode)
 
@@ -147,7 +174,7 @@ module control_unit (
                     3'b101: alu_ctrl = ALU_SLT;   // BGE: result inverted
                     3'b110: alu_ctrl = ALU_SLTU;  // BLTU
                     3'b111: alu_ctrl = ALU_SLTU;  // BGEU: result inverted
-                    default: alu_ctrl = ALU_SUB;
+                    default: begin alu_ctrl = ALU_SUB; illegal = 1; end
                 endcase
             end
 
@@ -187,10 +214,31 @@ module control_unit (
                 imm_sel = IMM_U;
                 alu_ctrl = ALU_ADD; // PC + upper immediate
             end
-
-            // SYSTEM: treat as NOP for now
-            OP_SYSTEM: begin
-                reg_we  = 0;
+            
+            // SYSTEM instructions: ECALL, EBREAK, MRET, CSRRS, etc.
+             OP_SYSTEM: begin
+                case (funct3)
+                    3'b000: begin
+                        // ECALL, EBREAK, MRET — distinguished by funct12
+                        case (funct12)
+                            12'b000000000000: ecall = 1;   // ECALL
+                            12'b000000000001: ;             // EBREAK — NOP
+                            12'b001100000010: mret  = 1;   // MRET
+                            default:          illegal = 1;
+                        endcase
+                    end
+                    // CSR instructions
+                    3'b001, 3'b010, 3'b011,   // CSRRW, CSRRS, CSRRC
+                    3'b101, 3'b110, 3'b111: begin  // CSRRWI, CSRRSI, CSRRCI
+                        reg_we     = 1;        // read CSR into rd
+                        csr_we     = 1;        // write to CSR
+                        csr_addr   = funct12;  // CSR address in bits [31:20]
+                        csr_funct3 = funct3;
+                        wb_sel     = 2'b11;    // new wb_sel: 11 = CSR read data
+                        imm_sel    = IMM_I;
+                    end
+                    default: illegal = 1;
+                endcase
             end
             
             // CUSTOM: SIMD operations
@@ -202,9 +250,7 @@ module control_unit (
                 alu_ctrl = 4'b0000; // alu_ctrl unused for SIMD
             end
 
-            default: begin
-                // unknown opcode — all signals stay at safe defaults
-            end
+            default: illegal = 1; // unrecognized opcode
 
         endcase
     end
