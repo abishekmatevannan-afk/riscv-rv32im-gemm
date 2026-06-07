@@ -39,13 +39,18 @@ module exception_unit (
     logic load_misalign;
     logic store_misalign;
 
+    logic addr_bit0;
+    logic addr_bit1;
+    assign addr_bit0 = ex_alu_result[0];
+    assign addr_bit1 = ex_alu_result[1];
+
     always_comb begin
         load_misalign = 0;
         if (ex_mem_re && ex_valid) begin
             case (ex_funct3)
-                3'b001: load_misalign = ex_alu_result[0];         // LH/LHU: 2-byte align
-                3'b101: load_misalign = ex_alu_result[0];         // LHU
-                3'b010: load_misalign = |ex_alu_result[1:0];      // LW: 4-byte align
+                3'b001: load_misalign = addr_bit0;
+                3'b101: load_misalign = addr_bit0;
+                3'b010: load_misalign = addr_bit0 | addr_bit1;
                 default: load_misalign = 0;
             endcase
         end
@@ -55,8 +60,8 @@ module exception_unit (
         store_misalign = 0;
         if (ex_mem_we && ex_valid) begin
             case (ex_funct3)
-                3'b001: store_misalign = ex_alu_result[0];        // SH
-                3'b010: store_misalign = |ex_alu_result[1:0];     // SW
+                3'b001: store_misalign = addr_bit0;
+                3'b010: store_misalign = addr_bit0 | addr_bit1;
                 default: store_misalign = 0;
             endcase
         end

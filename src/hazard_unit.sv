@@ -31,7 +31,11 @@ module hazard_unit (
     output logic       id_ex_stall,      
     output logic       ex_mem_stall,     
     output logic       mem_wb_stall,  
-    output logic       branch_mispredict // branch outcome != IF prediction   
+    output logic       branch_mispredict, // branch outcome != IF prediction   
+    
+    // exception-related inputs (for precise exceptions)
+    input  logic       trap,
+    input  logic       ex_mret
 );
 
     logic load_use_hazard;
@@ -48,7 +52,7 @@ module hazard_unit (
     // branch taken or unconditional jump
     // need to flush the two wrongly fetched instructions
     assign branch_mispredict = ex_branch && (branch_taken != ex_predict_taken);
-    assign control_hazard    = branch_mispredict || ex_jump;
+    assign control_hazard = branch_mispredict || ex_jump || trap || ex_mret;
 
     // pc_stall: release icache stall when a branch/jump correction fires.
     // if_id_flush being high means EX has resolved a misprediction or jump --
