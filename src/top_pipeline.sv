@@ -10,7 +10,6 @@ module top_pipeline #(
     input logic rst,
     input  logic uart_rx_pin,
     output logic uart_tx_pin
-   
 );
     // performance counter signals
     // =========================================================
@@ -20,10 +19,10 @@ module top_pipeline #(
 
     // Branch predictor signals
     // =========================================================
-    logic        bp_predict_taken;   // prediction from IF stage
-    logic [31:0] bp_predict_target;  // predicted target from IF stage
-    logic        ex_predict_taken;   // prediction carried to EX stage
-    logic        mispredict;         // misprediction detected in EX
+    logic        bp_predict_taken;
+    logic [31:0] bp_predict_target;
+    logic        ex_predict_taken;
+    logic        mispredict;
 
     // UART signals
     // =========================================================
@@ -54,14 +53,12 @@ module top_pipeline #(
     logic [31:0] id_imm;
     logic [31:0] id_imm_i, id_imm_s, id_imm_b, id_imm_u, id_imm_j;
 
-    // control signals from decode
     logic        id_reg_we, id_mem_we, id_mem_re;
     logic        id_alu_src, id_branch, id_jump;
     logic [1:0]  id_wb_sel;
     logic [3:0]  id_alu_ctrl;
     logic [2:0]  id_imm_sel;
 
-  
     // EX STAGE SIGNALS
     // =========================================================
     logic [31:0] ex_pc;
@@ -73,19 +70,16 @@ module top_pipeline #(
     logic [2:0]  ex_funct3;
     logic [6:0]  ex_funct7;
 
-    // SIMD signals
     logic [31:0] simd_result;
     logic        simd_valid;
     logic        is_simd;
-    logic [31:0] ex_result;  // final result — ALU or SIMD
+    logic [31:0] ex_result;
 
-    // control signals in EX
     logic        ex_reg_we, ex_mem_we, ex_mem_re;
     logic        ex_alu_src, ex_branch, ex_jump;
     logic [1:0]  ex_wb_sel;
     logic [3:0]  ex_alu_ctrl;
 
-    // forwarding mux outputs
     logic [31:0] ex_fwd_a, ex_fwd_b;
     logic [31:0] ex_alu_a, ex_alu_b;
     logic [31:0] ex_alu_result;
@@ -93,7 +87,6 @@ module top_pipeline #(
     logic [31:0] ex_pc_branch, ex_pc_jump;
     logic        ex_branch_taken;
 
-    // forwarding select signals
     logic [1:0]  forward_a, forward_b;
 
     // cache signals
@@ -102,11 +95,10 @@ module top_pipeline #(
     logic        cache_miss;
     logic [31:0] cache_rd;
 
-    // pipeline stall signals from hazard unit
+    // pipeline stall signals
     logic        id_ex_stall;
     logic        ex_mem_stall;
     logic        mem_wb_stall;
-
 
     // MEM STAGE SIGNALS
     // =========================================================
@@ -120,7 +112,6 @@ module top_pipeline #(
     logic [1:0]  mem_wb_sel;
     logic [2:0]  mem_funct3;
 
-
     // WB STAGE SIGNALS
     // =========================================================
     logic [31:0] wb_alu_result;
@@ -130,7 +121,6 @@ module top_pipeline #(
     logic        wb_reg_we;
     logic [1:0]  wb_wb_sel;
     logic [31:0] wb_data;
-
 
     // HAZARD SIGNALS
     // =========================================================
@@ -147,7 +137,7 @@ module top_pipeline #(
     logic [31:0] ic_mem_rd;
 
     // EXCEPTION AND CSR SIGNALS
-    // ========================================================
+    // =========================================================
     logic        ex_illegal, ex_ecall, ex_mret;
     logic        ex_csr_we;
     logic [11:0] ex_csr_addr;
@@ -164,25 +154,72 @@ module top_pipeline #(
     logic        ext_irq;
     logic        ex_valid;
     logic [31:0] wb_csr_rd;
-    logic        uart_irq;   
-    logic        id_valid;      
+    logic        uart_irq;
+    logic        id_valid;
+
+    // AXI4-Lite fabric signals
+    // =========================================================
+    // icache manager → interconnect (AR/R only)
+    logic        ic_m_arvalid, ic_m_arready;
+    logic [31:0] ic_m_araddr;
+    logic        ic_m_rvalid,  ic_m_rready;
+    logic [31:0] ic_m_rdata;
+    logic [1:0]  ic_m_rresp;
+
+    // dcache manager → interconnect (AW/W/B/AR/R)
+    logic        dc_m_awvalid, dc_m_awready;
+    logic [31:0] dc_m_awaddr;
+    logic        dc_m_wvalid,  dc_m_wready;
+    logic [31:0] dc_m_wdata;
+    logic [3:0]  dc_m_wstrb;
+    logic        dc_m_bvalid,  dc_m_bready;
+    logic [1:0]  dc_m_bresp;
+    logic        dc_m_arvalid, dc_m_arready;
+    logic [31:0] dc_m_araddr;
+    logic        dc_m_rvalid,  dc_m_rready;
+    logic [31:0] dc_m_rdata;
+    logic [1:0]  dc_m_rresp;
+
+    // interconnect → ISRAM subordinate (s0, read-only)
+    logic        s0_arvalid, s0_arready;
+    logic [31:0] s0_araddr;
+    logic        s0_rvalid,  s0_rready;
+    logic [31:0] s0_rdata;
+    logic [1:0]  s0_rresp;
+
+    // interconnect → DSRAM subordinate (s1, read/write)
+    logic        s1_awvalid, s1_awready;
+    logic [31:0] s1_awaddr;
+    logic        s1_wvalid,  s1_wready;
+    logic [31:0] s1_wdata;
+    logic [3:0]  s1_wstrb;
+    logic        s1_bvalid,  s1_bready;
+    logic [1:0]  s1_bresp;
+    logic        s1_arvalid, s1_arready;
+    logic [31:0] s1_araddr;
+    logic        s1_rvalid,  s1_rready;
+    logic [31:0] s1_rdata;
+    logic [1:0]  s1_rresp;
+
+    // dcache → dcache manager intermediate wires
+    // (replaces old dmem_* wires that went directly to data_memory)
+    logic        dmem_we, dmem_re;
+    logic [31:0] dmem_addr, dmem_wd, dmem_rd;
+    logic [2:0]  dmem_funct3;
 
 
     // IF STAGE
     // =========================================================
 
-    assign if_pc_plus4 = if_pc + 32'd4;
+    assign if_pc_plus4  = if_pc + 32'd4;
     assign if_is_branch = (if_instr[6:0] == 7'b1100011);
 
-    // PC next selection
-    // priority: jump > branch prediction / corrected branch > sequential
-    // if EX stage is jump, take it unconditionally
-    assign pc_next = trap              ? mtvec_out  :
-                     ex_mret           ? mepc_out   :
-                     ex_jump           ? ex_pc_jump :
-                     mispredict        ? (ex_branch_taken ? ex_pc_branch : ex_pc_plus4) :
-                     bp_predict_taken  ? bp_predict_target :
-                                         if_pc_plus4;
+    assign pc_next = trap             ? mtvec_out  :
+                     ex_mret          ? mepc_out   :
+                     ex_jump          ? ex_pc_jump :
+                     mispredict       ? (ex_branch_taken ? ex_pc_branch : ex_pc_plus4) :
+                     bp_predict_taken ? bp_predict_target :
+                                        if_pc_plus4;
 
     program_counter PC (
         .clk     (clk),
@@ -194,28 +231,116 @@ module top_pipeline #(
     );
 
     branch_predictor BP (
-    .clk             (clk),
-    .rst             (rst),
-    .if_pc           (if_pc),
-    .predict_taken   (bp_predict_taken),
-    .predict_target  (bp_predict_target),
-    .ex_branch       (ex_branch),
-    .ex_pc           (ex_pc),
-    .ex_actual_taken (ex_branch_taken),
-    .ex_actual_target(ex_pc_branch)
+        .clk             (clk),
+        .rst             (rst),
+        .if_pc           (if_pc),
+        .predict_taken   (bp_predict_taken),
+        .predict_target  (bp_predict_target),
+        .ex_branch       (ex_branch),
+        .ex_pc           (ex_pc),
+        .ex_actual_taken (ex_branch_taken),
+        .ex_actual_target(ex_pc_branch)
     );
 
-    instruction_memory #(.HEX_FILE(HEX_FILE)) IMEM (
-        .addr  (ic_mem_addr),
-        .instr (ic_mem_rd)
+    // AXI4-Lite fabric
+    // =========================================================
+    // icache manager: converts icache mem_re/mem_addr to AR/R channels
+    axi4_lite_icache_manager ICACHE_MGR (
+        .mem_re  (ic_mem_re),
+        .mem_addr(ic_mem_addr),
+        .mem_rd  (ic_mem_rd),
+        .arvalid (ic_m_arvalid), .araddr(ic_m_araddr), .arready(ic_m_arready),
+        .rvalid  (ic_m_rvalid),  .rdata (ic_m_rdata),
+        .rresp   (ic_m_rresp),   .rready(ic_m_rready)
     );
+
+    // dcache manager: converts dcache mem_we/mem_re/mem_addr to AXI channels
+    axi4_lite_dcache_manager DCACHE_MGR (
+        .mem_we  (dmem_we),
+        .mem_re  (dmem_re),
+        .mem_addr(dmem_addr),
+        .mem_wd  (dmem_wd),
+        .mem_rd  (dmem_rd),
+        .awvalid (dc_m_awvalid), .awaddr(dc_m_awaddr), .awready(dc_m_awready),
+        .wvalid  (dc_m_wvalid),  .wdata (dc_m_wdata),
+        .wstrb   (dc_m_wstrb),   .wready(dc_m_wready),
+        .bvalid  (dc_m_bvalid),  .bresp (dc_m_bresp),  .bready(dc_m_bready),
+        .arvalid (dc_m_arvalid), .araddr(dc_m_araddr), .arready(dc_m_arready),
+        .rvalid  (dc_m_rvalid),  .rdata (dc_m_rdata),
+        .rresp   (dc_m_rresp),   .rready(dc_m_rready)
+    );
+
+    // interconnect: icache→ISRAM, dcache→DSRAM, no arbitration needed
+    axi4_lite_interconnect XBAR (
+        .m0_arvalid(ic_m_arvalid), .m0_arready(ic_m_arready),
+        .m0_araddr (ic_m_araddr),
+        .m0_rvalid (ic_m_rvalid),  .m0_rready (ic_m_rready),
+        .m0_rdata  (ic_m_rdata),   .m0_rresp  (ic_m_rresp),
+
+        .m1_awvalid(dc_m_awvalid), .m1_awready(dc_m_awready), .m1_awaddr(dc_m_awaddr),
+        .m1_wvalid (dc_m_wvalid),  .m1_wready (dc_m_wready),
+        .m1_wdata  (dc_m_wdata),   .m1_wstrb  (dc_m_wstrb),
+        .m1_bvalid (dc_m_bvalid),  .m1_bready (dc_m_bready),  .m1_bresp (dc_m_bresp),
+        .m1_arvalid(dc_m_arvalid), .m1_arready(dc_m_arready), .m1_araddr(dc_m_araddr),
+        .m1_rvalid (dc_m_rvalid),  .m1_rready (dc_m_rready),
+        .m1_rdata  (dc_m_rdata),   .m1_rresp  (dc_m_rresp),
+
+        .s0_arvalid(s0_arvalid), .s0_arready(s0_arready), .s0_araddr(s0_araddr),
+        .s0_rvalid (s0_rvalid),  .s0_rready (s0_rready),
+        .s0_rdata  (s0_rdata),   .s0_rresp  (s0_rresp),
+
+        .s1_awvalid(s1_awvalid), .s1_awready(s1_awready), .s1_awaddr(s1_awaddr),
+        .s1_wvalid (s1_wvalid),  .s1_wready (s1_wready),
+        .s1_wdata  (s1_wdata),   .s1_wstrb  (s1_wstrb),
+        .s1_bvalid (s1_bvalid),  .s1_bready (s1_bready),  .s1_bresp (s1_bresp),
+        .s1_arvalid(s1_arvalid), .s1_arready(s1_arready), .s1_araddr(s1_araddr),
+        .s1_rvalid (s1_rvalid),  .s1_rready (s1_rready),
+        .s1_rdata  (s1_rdata),   .s1_rresp  (s1_rresp)
+    );
+
+    // ISRAM: read-only instruction SRAM, initialized from HEX_FILE
+    // Replaces instruction_memory module
+    axi4_lite_sram_sub #(
+        .DEPTH_WORDS(256),
+        .HEX_FILE   (HEX_FILE),
+        .READ_ONLY  (1)
+    ) ISRAM (
+        .clk    (clk),
+        .rst    (rst),
+        .arvalid(s0_arvalid), .arready(s0_arready), .araddr(s0_araddr),
+        .rvalid (s0_rvalid),  .rready (s0_rready),
+        .rdata  (s0_rdata),   .rresp  (s0_rresp),
+        .awvalid(1'b0), .awready(), .awaddr(32'd0),
+        .wvalid (1'b0), .wready (),  .wdata(32'd0), .wstrb(4'd0),
+        .bvalid (), .bready(1'b1), .bresp()
+    );
+
+    // DSRAM: read/write data SRAM, zero-initialized
+    // Replaces data_memory module
+    axi4_lite_sram_sub #(
+        .DEPTH_WORDS(256),
+        .HEX_FILE   (""),
+        .READ_ONLY  (0)
+    ) DSRAM (
+        .clk    (clk),
+        .rst    (rst),
+        .arvalid(s1_arvalid), .arready(s1_arready), .araddr(s1_araddr),
+        .rvalid (s1_rvalid),  .rready (s1_rready),
+        .rdata  (s1_rdata),   .rresp  (s1_rresp),
+        .awvalid(s1_awvalid), .awready(s1_awready), .awaddr(s1_awaddr),
+        .wvalid (s1_wvalid),  .wready (s1_wready),
+        .wdata  (s1_wdata),   .wstrb  (s1_wstrb),
+        .bvalid (s1_bvalid),  .bready (s1_bready),  .bresp(s1_bresp)
+    );
+
+    // icache: sits between PC and IF/ID, fills from ISRAM via fabric
     icache ICACHE (
         .clk         (clk),
         .rst         (rst),
-        .flush       (if_id_flush),   // abort fill on branch/jump correction
-        .cpu_re      (1'b1),          // fetch every cycle
+        .flush       (if_id_flush),
+        .cpu_re      (1'b1),
         .cpu_addr    (if_pc),
-        .cpu_rd      (if_instr),      // replaces direct IMEM.instr
+        .cpu_rd      (if_instr),
         .icache_stall(icache_stall),
         .icache_hit  (icache_hit),
         .icache_miss (icache_miss),
@@ -250,7 +375,6 @@ module top_pipeline #(
     assign id_rs2_addr  = id_instr[24:20];
     assign id_funct7    = id_instr[31:25];
 
-    // immediate generation
     assign id_imm_i = {{20{id_instr[31]}}, id_instr[31:20]};
     assign id_imm_s = {{20{id_instr[31]}}, id_instr[31:25], id_instr[11:7]};
     assign id_imm_b = {{19{id_instr[31]}}, id_instr[31], id_instr[7],
@@ -270,7 +394,7 @@ module top_pipeline #(
         endcase
     end
 
-   control_unit CU (
+    control_unit CU (
         .instr      (id_instr),
         .reg_we     (id_reg_we),
         .mem_we     (id_mem_we),
@@ -289,18 +413,14 @@ module top_pipeline #(
         .csr_funct3 (id_csr_funct3)
     );
 
-    // WB forwarding to register file reads
-    // handles the case where WB writes and ID reads same register in same cycle
     logic [31:0] id_rs1_data_fwd, id_rs2_data_fwd;
 
     assign id_rs1_data_fwd = (wb_reg_we && wb_rd_addr != 0 && wb_rd_addr == id_rs1_addr)
                            ? wb_data : id_rs1_data;
-
     assign id_rs2_data_fwd = (wb_reg_we && wb_rd_addr != 0 && wb_rd_addr == id_rs2_addr)
                            ? wb_data : id_rs2_data;
 
-    assign id_valid = 1'b1;  // every instruction entering ID is valid
-    // flush zeroes it out in id_ex_reg
+    assign id_valid = 1'b1;
 
     register_file RF (
         .clk (clk),
@@ -314,51 +434,51 @@ module top_pipeline #(
     );
 
     assign wb_csr_rd = csr_rd;
-    // ID/EX pipeline register
+
     id_ex_reg ID_EX (
-        .clk         (clk),
-        .rst         (rst),
-        .flush       (id_ex_flush),
-        .id_pc       (id_pc),
-        .id_reg_we   (id_reg_we),
-        .id_mem_we   (id_mem_we),
-        .id_mem_re   (id_mem_re),
-        .id_alu_src  (id_alu_src),
-        .id_wb_sel   (id_wb_sel),
-        .id_branch   (id_branch),
-        .id_jump     (id_jump),
-        .id_alu_ctrl (id_alu_ctrl),
-        .id_funct3   (id_funct3),
-        .id_rs1_data (id_rs1_data_fwd),
-        .id_rs2_data (id_rs2_data_fwd),  
-        .id_rs1_addr (id_rs1_addr),
-        .id_rs2_addr (id_rs2_addr),
-        .id_rd_addr  (id_rd_addr),
-        .id_imm      (id_imm),
-        .id_opcode   (id_opcode),
+        .clk           (clk),
+        .rst           (rst),
+        .flush         (id_ex_flush),
+        .id_pc         (id_pc),
+        .id_reg_we     (id_reg_we),
+        .id_mem_we     (id_mem_we),
+        .id_mem_re     (id_mem_re),
+        .id_alu_src    (id_alu_src),
+        .id_wb_sel     (id_wb_sel),
+        .id_branch     (id_branch),
+        .id_jump       (id_jump),
+        .id_alu_ctrl   (id_alu_ctrl),
+        .id_funct3     (id_funct3),
+        .id_rs1_data   (id_rs1_data_fwd),
+        .id_rs2_data   (id_rs2_data_fwd),
+        .id_rs1_addr   (id_rs1_addr),
+        .id_rs2_addr   (id_rs2_addr),
+        .id_rd_addr    (id_rd_addr),
+        .id_imm        (id_imm),
+        .id_opcode     (id_opcode),
         .id_illegal    (id_illegal),
         .id_ecall      (id_ecall),
         .id_mret       (id_mret),
         .id_csr_we     (id_csr_we),
         .id_csr_addr   (id_csr_addr),
         .id_csr_funct3 (id_csr_funct3),
-        .ex_pc       (ex_pc),
-        .ex_reg_we   (ex_reg_we),
-        .ex_mem_we   (ex_mem_we),
-        .ex_mem_re   (ex_mem_re),
-        .ex_alu_src  (ex_alu_src),
-        .ex_wb_sel   (ex_wb_sel),
-        .ex_branch   (ex_branch),
-        .ex_jump     (ex_jump),
-        .ex_alu_ctrl (ex_alu_ctrl),
-        .ex_funct3   (ex_funct3),
-        .ex_rs1_data (ex_rs1_data),
-        .ex_rs2_data (ex_rs2_data),
-        .ex_rs1_addr (ex_rs1_addr),
-        .ex_rs2_addr (ex_rs2_addr),
-        .ex_rd_addr  (ex_rd_addr),
-        .ex_imm      (ex_imm),
-        .ex_opcode   (ex_opcode),
+        .ex_pc         (ex_pc),
+        .ex_reg_we     (ex_reg_we),
+        .ex_mem_we     (ex_mem_we),
+        .ex_mem_re     (ex_mem_re),
+        .ex_alu_src    (ex_alu_src),
+        .ex_wb_sel     (ex_wb_sel),
+        .ex_branch     (ex_branch),
+        .ex_jump       (ex_jump),
+        .ex_alu_ctrl   (ex_alu_ctrl),
+        .ex_funct3     (ex_funct3),
+        .ex_rs1_data   (ex_rs1_data),
+        .ex_rs2_data   (ex_rs2_data),
+        .ex_rs1_addr   (ex_rs1_addr),
+        .ex_rs2_addr   (ex_rs2_addr),
+        .ex_rd_addr    (ex_rd_addr),
+        .ex_imm        (ex_imm),
+        .ex_opcode     (ex_opcode),
         .ex_illegal    (ex_illegal),
         .ex_ecall      (ex_ecall),
         .ex_mret       (ex_mret),
@@ -369,9 +489,9 @@ module top_pipeline #(
         .ex_funct7         (ex_funct7),
         .id_predict_taken  (id_predict_taken),
         .ex_predict_taken  (ex_predict_taken),
-        .id_valid    (id_valid),
-        .ex_valid    (ex_valid),
-        .stall       (id_ex_stall)
+        .id_valid      (id_valid),
+        .ex_valid      (ex_valid),
+        .stall         (id_ex_stall)
     );
 
 
@@ -380,31 +500,26 @@ module top_pipeline #(
 
     assign ex_pc_plus4 = ex_pc + 32'd4;
 
-    // forwarding muxes for ALU operand A
     always_comb begin
         case (forward_a)
-            2'b00:   ex_fwd_a = ex_rs1_data;      // no forward
-            2'b01:   ex_fwd_a = wb_data;           // from WB
-            2'b10:   ex_fwd_a = mem_alu_result;    // from MEM
+            2'b00:   ex_fwd_a = ex_rs1_data;
+            2'b01:   ex_fwd_a = wb_data;
+            2'b10:   ex_fwd_a = mem_alu_result;
             default: ex_fwd_a = ex_rs1_data;
         endcase
     end
 
-    // forwarding muxes for ALU operand B
     always_comb begin
         case (forward_b)
-            2'b00:   ex_fwd_b = ex_rs2_data;      // no forward
-            2'b01:   ex_fwd_b = wb_data;           // from WB
-            2'b10:   ex_fwd_b = mem_alu_result;    // from MEM
+            2'b00:   ex_fwd_b = ex_rs2_data;
+            2'b01:   ex_fwd_b = wb_data;
+            2'b10:   ex_fwd_b = mem_alu_result;
             default: ex_fwd_b = ex_rs2_data;
         endcase
     end
 
-    // ALU input A: PC for AUIPC/JAL, forwarded rs1 otherwise
     assign ex_alu_a = (ex_opcode == 7'b0010111 ||
                        ex_opcode == 7'b1101111) ? ex_pc : ex_fwd_a;
-
-    // ALU input B: immediate or forwarded rs2
     assign ex_alu_b = ex_alu_src ? ex_imm : ex_fwd_b;
 
     alu ALU (
@@ -415,7 +530,6 @@ module top_pipeline #(
         .zero     (ex_alu_zero)
     );
 
-    // SIMD ALU
     assign is_simd = (ex_opcode == 7'b0001011);
 
     simd_alu SIMD (
@@ -427,18 +541,13 @@ module top_pipeline #(
         .valid   (simd_valid)
     );
 
-    // CSR read: ex_csr_funct3 is non-zero only for CSR instructions (CSRRW/CSRRS/etc.)
-    // Routing csr_rd through ex_result lets it flow through EX/MEM and MEM/WB registers
-    // naturally, fixing both the WB write-back value and MEM/WB-stage forwarding.
     logic ex_csr_re;
     assign ex_csr_re = (ex_csr_funct3 != 3'b000);
 
-    // select between regular ALU, SIMD, and CSR read result
     assign ex_result = is_simd   ? simd_result :
                        ex_csr_re ? csr_rd      :
                                    ex_alu_result;
 
-    // branch resolution
     logic ex_alu_bit0;
     assign ex_alu_bit0 = ex_alu_result[0];
 
@@ -457,13 +566,11 @@ module top_pipeline #(
         end
     end
 
-    // branch and jump target computation
     assign ex_pc_branch = ex_pc + ex_imm;
     assign ex_pc_jump   = (ex_opcode == 7'b1100111) ?
-                           (ex_fwd_a + ex_imm) & ~32'd1 :  // JALR
-                            ex_pc + ex_imm;                 // JAL
+                           (ex_fwd_a + ex_imm) & ~32'd1 :
+                            ex_pc + ex_imm;
 
-    // forward unit
     forward_unit FU (
         .ex_rs1_addr (ex_rs1_addr),
         .ex_rs2_addr (ex_rs2_addr),
@@ -475,55 +582,39 @@ module top_pipeline #(
         .forward_b   (forward_b)
     );
 
-    // EX/MEM pipeline register
     ex_mem_reg EX_MEM (
-    .clk           (clk),
-    .rst           (rst),
-    .ex_reg_we     (ex_reg_we),
-    .ex_mem_we     (ex_mem_we),
-    .ex_mem_re     (ex_mem_re),
-    .ex_wb_sel     (ex_wb_sel),
-    .ex_funct3     (ex_funct3),
-    .ex_alu_result (ex_result),
-    .ex_alu_zero   (ex_alu_zero),
-    .ex_rs2_data   (ex_fwd_b),
-    .ex_rd_addr    (ex_rd_addr),
-    .ex_pc_plus4   (ex_pc_plus4),
-    .mem_reg_we    (mem_reg_we),
-    .mem_mem_we    (mem_mem_we),
-    .mem_mem_re    (mem_mem_re),
-    .mem_wb_sel    (mem_wb_sel),
-    .mem_funct3    (mem_funct3),
-    .mem_alu_result(mem_alu_result),
-    .mem_alu_zero  (mem_alu_zero),
-    .mem_rs2_data  (mem_rs2_data),
-    .mem_rd_addr   (mem_rd_addr),
-    .mem_pc_plus4  (mem_pc_plus4),
-    .stall         (ex_mem_stall),
-    .flush         (1'b0)              // no flush path needed
-);
+        .clk           (clk),
+        .rst           (rst),
+        .ex_reg_we     (ex_reg_we),
+        .ex_mem_we     (ex_mem_we),
+        .ex_mem_re     (ex_mem_re),
+        .ex_wb_sel     (ex_wb_sel),
+        .ex_funct3     (ex_funct3),
+        .ex_alu_result (ex_result),
+        .ex_alu_zero   (ex_alu_zero),
+        .ex_rs2_data   (ex_fwd_b),
+        .ex_rd_addr    (ex_rd_addr),
+        .ex_pc_plus4   (ex_pc_plus4),
+        .mem_reg_we    (mem_reg_we),
+        .mem_mem_we    (mem_mem_we),
+        .mem_mem_re    (mem_mem_re),
+        .mem_wb_sel    (mem_wb_sel),
+        .mem_funct3    (mem_funct3),
+        .mem_alu_result(mem_alu_result),
+        .mem_alu_zero  (mem_alu_zero),
+        .mem_rs2_data  (mem_rs2_data),
+        .mem_rd_addr   (mem_rd_addr),
+        .mem_pc_plus4  (mem_pc_plus4),
+        .stall         (ex_mem_stall),
+        .flush         (1'b0)
+    );
 
 
     // MEM STAGE
     // =========================================================
 
-    // backing memory — only sees dcache internal addresses
-    logic        dmem_we, dmem_re;
-    logic [31:0] dmem_addr, dmem_wd, dmem_rd;
-    logic [2:0]  dmem_funct3;
-
-    data_memory DMEM (
-        .clk    (clk),
-        .we     (dmem_we),
-        .re     (dmem_re),
-        .addr   (dmem_addr),
-        .wd     (dmem_wd),
-        .funct3 (dmem_funct3),
-        .rd     (dmem_rd)
-    );
-
-   
-
+    // dcache: fills from DSRAM via AXI4-Lite fabric
+    // dmem_* wires connect dcache memory port to dcache manager
     dcache DCACHE (
         .clk         (clk),
         .rst         (rst),
@@ -560,15 +651,13 @@ module top_pipeline #(
         .uart_rx_pin (uart_rx_pin),
         .irq         (uart_irq)
     );
-    
 
     // MEM/WB pipeline register
-    
-        // select read data from RAM or UART based on address
     logic [31:0] mem_read_data_mux;
-    assign mem_read_data_mux = is_perf ? perf_rd   :
-                               is_io   ? uart_rd   :
+    assign mem_read_data_mux = is_perf ? perf_rd :
+                               is_io   ? uart_rd :
                                          cache_rd;
+
     mem_wb_reg MEM_WB (
         .clk            (clk),
         .rst            (rst),
@@ -590,50 +679,45 @@ module top_pipeline #(
 
     // WB STAGE
     // =========================================================
-    // WB data selection
+
     assign wb_data = (wb_wb_sel == 2'b01) ? wb_read_data  :
                      (wb_wb_sel == 2'b10) ? wb_pc_plus4   :
                      (wb_wb_sel == 2'b11) ? wb_csr_rd     :
                                              wb_alu_result;
 
 
-
-
     // HAZARD UNIT
     // =========================================================
 
-   hazard_unit HU (
-    .ex_mem_re        (ex_mem_re),
-    .ex_rd_addr       (ex_rd_addr),
-    .id_rs1_addr      (id_rs1_addr),
-    .id_rs2_addr      (id_rs2_addr),
-    .ex_branch        (ex_branch),
-    .ex_jump          (ex_jump),
-    .branch_taken     (ex_branch_taken),
-    .ex_predict_taken (ex_predict_taken),
-    .cache_stall      (cache_stall),
-    .icache_stall     (icache_stall),
-    .pc_stall         (pc_stall),
-    .if_id_stall      (if_id_stall),
-    .if_id_flush      (if_id_flush),
-    .id_ex_stall      (id_ex_stall),
-    .id_ex_flush      (id_ex_flush),
-    .ex_mem_stall     (ex_mem_stall),
-    .mem_wb_stall     (mem_wb_stall),
-    .trap      (trap),
-    .ex_mret   (ex_mret),
-    .branch_mispredict(mispredict)
-);
+    hazard_unit HU (
+        .ex_mem_re        (ex_mem_re),
+        .ex_rd_addr       (ex_rd_addr),
+        .id_rs1_addr      (id_rs1_addr),
+        .id_rs2_addr      (id_rs2_addr),
+        .ex_branch        (ex_branch),
+        .ex_jump          (ex_jump),
+        .branch_taken     (ex_branch_taken),
+        .ex_predict_taken (ex_predict_taken),
+        .cache_stall      (cache_stall),
+        .icache_stall     (icache_stall),
+        .pc_stall         (pc_stall),
+        .if_id_stall      (if_id_stall),
+        .if_id_flush      (if_id_flush),
+        .id_ex_stall      (id_ex_stall),
+        .id_ex_flush      (id_ex_flush),
+        .ex_mem_stall     (ex_mem_stall),
+        .mem_wb_stall     (mem_wb_stall),
+        .trap             (trap),
+        .ex_mret          (ex_mret),
+        .branch_mispredict(mispredict)
+    );
 
-    // instruction retired — high when valid instruction completes WB
-    // wb_reg_we being high means a real instruction is writing back
+    // instruction retired
     assign instr_retired = wb_reg_we;
 
-    // performance counter address region is 0xFFFF2000 - 0xFFFF2014
-    // must use mem_alu_result not dcache's internal address
     assign is_perf = (mem_alu_result[31:8] == 24'hFFFF20);
-    assign is_io   = (mem_alu_result[31:16] == 16'hFFFF) && !is_perf; // IO and perf detection from CPU address directly
-    
+assign is_io   = (mem_alu_result[31:16] == 16'hFFFF);   // PMU also treated as IO
+
     perf_counters PERF (
         .clk           (clk),
         .rst           (rst),
@@ -650,13 +734,13 @@ module top_pipeline #(
     );
 
     assign ext_irq = uart_irq;
-    // CSR register file
+
     csr_regfile CSRS (
         .clk        (clk),
         .rst        (rst),
         .csr_we     (ex_csr_we),
         .csr_addr   (ex_csr_addr),
-        .csr_wd     (ex_fwd_a),      // rs1 value for CSRRW
+        .csr_wd     (ex_fwd_a),
         .csr_rd     (csr_rd),
         .trap       (trap),
         .trap_cause (trap_cause),
@@ -669,7 +753,6 @@ module top_pipeline #(
         .meie       (meie)
     );
 
-    // exception unit
     exception_unit EU (
         .ex_pc        (ex_pc),
         .ex_valid     (ex_valid),
@@ -686,4 +769,5 @@ module top_pipeline #(
         .trap_cause   (trap_cause),
         .trap_epc     (trap_epc)
     );
+
 endmodule
