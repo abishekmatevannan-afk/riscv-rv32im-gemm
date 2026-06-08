@@ -133,11 +133,11 @@ $display("x5=0x%08h x6=0x%08h", cpu1.RF.regs[5], cpu1.RF.regs[6]);
             cpu2.DCACHE.data[1][0], cpu2.DCACHE.data[1][1],
             cpu2.DCACHE.data[1][2], cpu2.DCACHE.data[1][3]);
         $display("dmem[0..3]: %02h %02h %02h %02h",
-            cpu2.DMEM.mem[0], cpu2.DMEM.mem[1],
-            cpu2.DMEM.mem[2], cpu2.DMEM.mem[3]);
+            cpu2.DSRAM.mem[0][ 7: 0], cpu2.DSRAM.mem[0][15: 8],
+            cpu2.DSRAM.mem[0][23:16], cpu2.DSRAM.mem[0][31:24]);
         $display("dmem[4..7]: %02h %02h %02h %02h",
-            cpu2.DMEM.mem[4], cpu2.DMEM.mem[5],
-            cpu2.DMEM.mem[6], cpu2.DMEM.mem[7]);
+            cpu2.DSRAM.mem[1][ 7: 0], cpu2.DSRAM.mem[1][15: 8],
+            cpu2.DSRAM.mem[1][23:16], cpu2.DSRAM.mem[1][31:24]);
 
         $display("\n--- TEST 1: Arithmetic + Branch + Loop ---");
         check1(5'd1, 32'd5,   "addi x1=5");
