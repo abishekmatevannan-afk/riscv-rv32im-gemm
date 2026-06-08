@@ -14,7 +14,7 @@ module tb_dcache;
     logic        is_io;
 
     // fake backing memory for testbench
-    logic [31:0] backing_mem [0:255];
+    logic [31:0] backing_mem [0:65535];  // 256KB / 4 = 65536 words
 
     dcache dut (
         .clk         (clk),
@@ -48,14 +48,14 @@ module tb_dcache;
     // simple backing memory model
     always_ff @(posedge clk) begin
         if (mem_we)
-            backing_mem[mem_addr[9:2]] <= mem_wd;
+            backing_mem[mem_addr[17:2]] <= mem_wd;
     end
-    assign mem_rd = backing_mem[mem_addr[9:2]];
+    assign mem_rd = backing_mem[mem_addr[17:2]];
 
     // initialize backing memory
     integer k;
     initial begin
-        for (k = 0; k < 256; k++)
+        for (k = 0; k < 65536; k++)
             backing_mem[k] = k * 32'h01010101;
     end
 
@@ -85,6 +85,12 @@ module tb_dcache;
         cpu_re = 0;
         @(posedge clk); #1;
     endtask
+
+    // DEBUG: trace writeback transactions to catch wrong-address evictions
+    always @(posedge clk) begin
+        if (mem_we)
+            $display("  [WB] mem_addr=0x%08h mem_wd=0x%08h", mem_addr, mem_wd);
+    end
 
     logic [31:0] val;
     integer hits, misses;
@@ -131,11 +137,11 @@ module tb_dcache;
             $display("FAIL: adjacent word should hit same line");
 
         // TEST 4: conflict miss — two addresses map to same index
-        // addr 0x00 and addr 0x100 both map to index 0
+        // 4KB cache: addr[11:4] is the index, so 0x0000 and 0x1000 both map to index 0
         $display("\n--- TEST 4: Conflict miss (same index different tag) ---");
         read_word(32'h00000000, val); // bring addr 0 into cache
-        read_word(32'h00000100, val); // maps to same index, should miss
-        if (cache_miss || val == backing_mem[32'h100 >> 2])
+        read_word(32'h00001000, val); // maps to same index (addr[11:4]=0), should miss
+        if (cache_miss || val == backing_mem[32'h1000 >> 2])
             $display("PASS: conflict miss detected");
         else
             $display("INFO: conflict miss val=0x%08h", val);
@@ -143,7 +149,7 @@ module tb_dcache;
         // TEST 5: writeback — write to line, then evict with conflict
         $display("\n--- TEST 5: Dirty writeback ---");
         write_word(32'h00000000, 32'hCAFEBABE); // write to line 0, mark dirty
-        read_word(32'h00000100, val);             // evict dirty line 0 → writeback
+        read_word(32'h00001000, val);             // evict dirty line 0 → writeback
         // verify writeback happened to backing memory
         @(posedge clk); #1;
         if (backing_mem[0] == 32'hCAFEBABE)

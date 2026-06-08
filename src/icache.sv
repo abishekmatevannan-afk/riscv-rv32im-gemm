@@ -29,10 +29,10 @@ module icache (
     input  logic [31:0] mem_rd
 );
 
-    localparam NUM_LINES  = 16;
+    localparam NUM_LINES  = 256;
     localparam LINE_WORDS = 4;
-    localparam TAG_WIDTH  = 24;
-    localparam IDX_WIDTH  = 4;
+    localparam TAG_WIDTH  = 20;
+    localparam IDX_WIDTH  = 8;
 
     logic                 valid [NUM_LINES-1:0];
     logic [TAG_WIDTH-1:0] tags  [NUM_LINES-1:0];
@@ -44,8 +44,8 @@ module icache (
     logic [IDX_WIDTH-1:0] addr_idx;
     logic [1:0]           word_off;
 
-    assign addr_tag = cpu_addr[31:8];
-    assign addr_idx = cpu_addr[7:4];
+    assign addr_tag = cpu_addr[31:12];
+    assign addr_idx = cpu_addr[11:4];
     assign word_off = cpu_addr[3:2];
 
     logic hit;
