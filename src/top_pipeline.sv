@@ -8,7 +8,9 @@ module top_pipeline #(
 )(
     input logic clk,
     input logic rst,
+    input  logic uart_rx_pin,
     output logic uart_tx_pin
+   
 );
     // performance counter signals
     // =========================================================
@@ -144,6 +146,27 @@ module top_pipeline #(
     logic [31:0] ic_mem_addr;
     logic [31:0] ic_mem_rd;
 
+    // EXCEPTION AND CSR SIGNALS
+    // ========================================================
+    logic        ex_illegal, ex_ecall, ex_mret;
+    logic        ex_csr_we;
+    logic [11:0] ex_csr_addr;
+    logic [2:0]  ex_csr_funct3;
+    logic        id_illegal, id_ecall, id_mret;
+    logic        id_csr_we;
+    logic [11:0] id_csr_addr;
+    logic [2:0]  id_csr_funct3;
+    logic        trap;
+    logic [31:0] trap_cause, trap_epc;
+    logic [31:0] csr_rd;
+    logic [31:0] mtvec_out, mepc_out;
+    logic        mie_global, meie;
+    logic        ext_irq;
+    logic        ex_valid;
+    logic [31:0] wb_csr_rd;
+    logic        uart_irq;   
+    logic        id_valid;      
+
 
     // IF STAGE
     // =========================================================
@@ -153,11 +176,13 @@ module top_pipeline #(
 
     // PC next selection
     // priority: jump > branch prediction / corrected branch > sequential
-    assign pc_next = ex_jump                               ? ex_pc_jump                            :
-                     mispredict                                ? (ex_branch_taken ? ex_pc_branch
-                                                                   : ex_pc_plus4)       :
-                     bp_predict_taken                         ? bp_predict_target                       :
-                     if_pc_plus4;
+    // if EX stage is jump, take it unconditionally
+    assign pc_next = trap              ? mtvec_out  :
+                     ex_mret           ? mepc_out   :
+                     ex_jump           ? ex_pc_jump :
+                     mispredict        ? (ex_branch_taken ? ex_pc_branch : ex_pc_plus4) :
+                     bp_predict_taken  ? bp_predict_target :
+                                         if_pc_plus4;
 
     program_counter PC (
         .clk     (clk),
@@ -245,17 +270,23 @@ module top_pipeline #(
         endcase
     end
 
-    control_unit CU (
-        .instr    (id_instr),
-        .reg_we   (id_reg_we),
-        .mem_we   (id_mem_we),
-        .mem_re   (id_mem_re),
-        .alu_src  (id_alu_src),
-        .wb_sel   (id_wb_sel),
-        .branch   (id_branch),
-        .jump     (id_jump),
-        .alu_ctrl (id_alu_ctrl),
-        .imm_sel  (id_imm_sel)
+   control_unit CU (
+        .instr      (id_instr),
+        .reg_we     (id_reg_we),
+        .mem_we     (id_mem_we),
+        .mem_re     (id_mem_re),
+        .alu_src    (id_alu_src),
+        .wb_sel     (id_wb_sel),
+        .branch     (id_branch),
+        .jump       (id_jump),
+        .alu_ctrl   (id_alu_ctrl),
+        .imm_sel    (id_imm_sel),
+        .illegal    (id_illegal),
+        .ecall      (id_ecall),
+        .mret       (id_mret),
+        .csr_we     (id_csr_we),
+        .csr_addr   (id_csr_addr),
+        .csr_funct3 (id_csr_funct3)
     );
 
     // WB forwarding to register file reads
@@ -267,6 +298,10 @@ module top_pipeline #(
 
     assign id_rs2_data_fwd = (wb_reg_we && wb_rd_addr != 0 && wb_rd_addr == id_rs2_addr)
                            ? wb_data : id_rs2_data;
+
+    assign id_valid = 1'b1;  // every instruction entering ID is valid
+    // flush zeroes it out in id_ex_reg
+
     register_file RF (
         .clk (clk),
         .we  (wb_reg_we),
@@ -278,6 +313,7 @@ module top_pipeline #(
         .rd2 (id_rs2_data)
     );
 
+    assign wb_csr_rd = csr_rd;
     // ID/EX pipeline register
     id_ex_reg ID_EX (
         .clk         (clk),
@@ -300,6 +336,12 @@ module top_pipeline #(
         .id_rd_addr  (id_rd_addr),
         .id_imm      (id_imm),
         .id_opcode   (id_opcode),
+        .id_illegal    (id_illegal),
+        .id_ecall      (id_ecall),
+        .id_mret       (id_mret),
+        .id_csr_we     (id_csr_we),
+        .id_csr_addr   (id_csr_addr),
+        .id_csr_funct3 (id_csr_funct3),
         .ex_pc       (ex_pc),
         .ex_reg_we   (ex_reg_we),
         .ex_mem_we   (ex_mem_we),
@@ -317,10 +359,18 @@ module top_pipeline #(
         .ex_rd_addr  (ex_rd_addr),
         .ex_imm      (ex_imm),
         .ex_opcode   (ex_opcode),
+        .ex_illegal    (ex_illegal),
+        .ex_ecall      (ex_ecall),
+        .ex_mret       (ex_mret),
+        .ex_csr_we     (ex_csr_we),
+        .ex_csr_addr   (ex_csr_addr),
+        .ex_csr_funct3 (ex_csr_funct3),
         .id_funct7         (id_funct7),
         .ex_funct7         (ex_funct7),
         .id_predict_taken  (id_predict_taken),
         .ex_predict_taken  (ex_predict_taken),
+        .id_valid    (id_valid),
+        .ex_valid    (ex_valid),
         .stall       (id_ex_stall)
     );
 
@@ -377,8 +427,16 @@ module top_pipeline #(
         .valid   (simd_valid)
     );
 
-    // select between regular ALU and SIMD result
-    assign ex_result = is_simd ? simd_result : ex_alu_result;
+    // CSR read: ex_csr_funct3 is non-zero only for CSR instructions (CSRRW/CSRRS/etc.)
+    // Routing csr_rd through ex_result lets it flow through EX/MEM and MEM/WB registers
+    // naturally, fixing both the WB write-back value and MEM/WB-stage forwarding.
+    logic ex_csr_re;
+    assign ex_csr_re = (ex_csr_funct3 != 3'b000);
+
+    // select between regular ALU, SIMD, and CSR read result
+    assign ex_result = is_simd   ? simd_result :
+                       ex_csr_re ? csr_rd      :
+                                   ex_alu_result;
 
     // branch resolution
     logic ex_alu_bit0;
@@ -494,10 +552,13 @@ module top_pipeline #(
         .clk         (clk),
         .rst         (rst),
         .we          (uart_we),
+        .re          (mem_mem_re && is_io && !is_perf),
         .addr        (mem_alu_result),
         .wd          (mem_rs2_data),
         .rd          (uart_rd),
-        .uart_tx_pin (uart_tx_pin)
+        .uart_tx_pin (uart_tx_pin),
+        .uart_rx_pin (uart_rx_pin),
+        .irq         (uart_irq)
     );
     
 
@@ -529,9 +590,10 @@ module top_pipeline #(
 
     // WB STAGE
     // =========================================================
-
+    // WB data selection
     assign wb_data = (wb_wb_sel == 2'b01) ? wb_read_data  :
                      (wb_wb_sel == 2'b10) ? wb_pc_plus4   :
+                     (wb_wb_sel == 2'b11) ? wb_csr_rd     :
                                              wb_alu_result;
 
 
@@ -558,6 +620,8 @@ module top_pipeline #(
     .id_ex_flush      (id_ex_flush),
     .ex_mem_stall     (ex_mem_stall),
     .mem_wb_stall     (mem_wb_stall),
+    .trap      (trap),
+    .ex_mret   (ex_mret),
     .branch_mispredict(mispredict)
 );
 
@@ -585,4 +649,41 @@ module top_pipeline #(
         .icache_miss   (icache_miss)
     );
 
+    assign ext_irq = uart_irq;
+    // CSR register file
+    csr_regfile CSRS (
+        .clk        (clk),
+        .rst        (rst),
+        .csr_we     (ex_csr_we),
+        .csr_addr   (ex_csr_addr),
+        .csr_wd     (ex_fwd_a),      // rs1 value for CSRRW
+        .csr_rd     (csr_rd),
+        .trap       (trap),
+        .trap_cause (trap_cause),
+        .trap_epc   (trap_epc),
+        .mret       (ex_mret),
+        .ext_irq    (ext_irq),
+        .mtvec_out  (mtvec_out),
+        .mepc_out   (mepc_out),
+        .mie_global (mie_global),
+        .meie       (meie)
+    );
+
+    // exception unit
+    exception_unit EU (
+        .ex_pc        (ex_pc),
+        .ex_valid     (ex_valid),
+        .ex_illegal   (ex_illegal),
+        .ex_ecall     (ex_ecall),
+        .ex_mem_re    (ex_mem_re),
+        .ex_mem_we    (ex_mem_we),
+        .ex_funct3    (ex_funct3),
+        .ex_alu_result(ex_alu_result),
+        .ext_irq      (ext_irq),
+        .mie_global   (mie_global),
+        .meie         (meie),
+        .trap         (trap),
+        .trap_cause   (trap_cause),
+        .trap_epc     (trap_epc)
+    );
 endmodule

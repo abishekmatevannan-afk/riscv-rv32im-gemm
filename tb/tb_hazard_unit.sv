@@ -12,6 +12,8 @@ module tb_hazard_unit;
     logic       branch_mispredict;
     logic       cache_stall;
     logic       icache_stall;
+    logic trap;
+    logic ex_mret;
 
     hazard_unit dut (
         .ex_mem_re        (ex_mem_re),
@@ -32,10 +34,12 @@ module tb_hazard_unit;
         .ex_mem_stall     (ex_mem_stall),
         .mem_wb_stall     (mem_wb_stall),
         .branch_mispredict(branch_mispredict)
+        .trap             (trap),
+        .ex_mret          (ex_mret)
     );
 
     task automatic check(
-        input       mem_re, branch, jump, taken, cs,
+        input       mem_re, branch, jump, taken, cs, trap, ex_mret,
         input [4:0] ex_rd, id_rs1, id_rs2,
         input       exp_pc_stall, exp_if_id_stall,
         input       exp_if_id_flush, exp_id_ex_flush,
@@ -51,6 +55,8 @@ module tb_hazard_unit;
         ex_rd_addr   = ex_rd;
         id_rs1_addr  = id_rs1;
         id_rs2_addr  = id_rs2;
+        trap         = trap;
+        ex_mret      = ex_mret;
         
         #10;
 
@@ -71,8 +77,8 @@ module tb_hazard_unit;
         $display("========== HAZARD UNIT TESTBENCH ==========");
 
         // cs=0 for all normal tests
-        check(0, 0, 0, 0, 0, 5'd1, 5'd2, 5'd3, 0, 0, 0, 0, "no hazard");
-        check(1, 0, 0, 0, 0, 5'd1, 5'd1, 5'd2, 1, 1, 0, 1, "load-use rs1");
+        check(0, 0, 0, 0, 0, 5'd1, 5'd2, 5'd3, 0, 0, 0, 0, 0, 0, "no hazard");
+        check(1, 0, 0, 0, 0, 5'd1, 5'd1, 5'd2, 1, 1, 0, 1, 0, 0, "load-use rs1");
         check(1, 0, 0, 0, 0, 5'd1, 5'd2, 5'd1, 1, 1, 0, 1, "load-use rs2");
         check(1, 0, 0, 0, 0, 5'd1, 5'd2, 5'd3, 0, 0, 0, 0, "load no match");
         check(0, 1, 0, 1, 0, 5'd0, 5'd0, 5'd0, 0, 0, 1, 1, "branch taken");

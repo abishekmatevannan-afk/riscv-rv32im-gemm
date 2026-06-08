@@ -65,14 +65,22 @@ module hazard_unit (
     // so a simultaneous branch correction still clears the wrong instruction.
     assign if_id_stall  = load_use_hazard || cache_stall || icache_stall;
     
-    assign id_ex_stall  = cache_stall || icache_stall;
-    assign ex_mem_stall = cache_stall || icache_stall;
-    assign mem_wb_stall = cache_stall || icache_stall;
+    // During icache miss, only stall IF/ID — let EX/MEM/WB drain naturally.
+    // This prevents the load-drop bug: if a load-use flush (id_ex_flush=1) and
+    // an icache stall (ex_mem_stall=1) fire together, the load is cleared from
+    // EX by the flush but blocked from advancing to MEM by the stall, silently
+    // discarding it. By not stalling EX/MEM/WB during icache fills, the load
+    // advances to MEM normally and commits while IF/ID waits for the fill.
+    assign id_ex_stall  = cache_stall;
+    assign ex_mem_stall = cache_stall;
+    assign mem_wb_stall = cache_stall;
 
     // flush signals
     // load-use: flush ID/EX only (insert bubble into EX)
     // control:  flush IF/ID and ID/EX (remove wrong instructions)
-    assign id_ex_flush = (load_use_hazard || control_hazard) && !cache_stall;
+    // icache:   flush ID/EX each cycle during fill (IF/ID stalls, so ID holds
+    //           the stale instruction — inserting a bubble prevents double-issue)
+    assign id_ex_flush = (load_use_hazard || control_hazard || icache_stall) && !cache_stall;
     assign if_id_flush = control_hazard && !cache_stall;
 
 

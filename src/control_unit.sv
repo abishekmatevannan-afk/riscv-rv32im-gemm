@@ -35,7 +35,7 @@ module control_unit (
     assign opcode = instr[6:0];
     assign funct3 = instr[14:12];
     assign funct7 = instr[31:25];
-    assign funct12 = instr[11:0];
+    assign funct12 = instr[31:20];  // CSR address / SYSTEM sub-opcode lives in instr[31:20]
 
     // opcode definitions
     localparam OP_R      = 7'b0110011;
@@ -230,11 +230,14 @@ module control_unit (
                     // CSR instructions
                     3'b001, 3'b010, 3'b011,   // CSRRW, CSRRS, CSRRC
                     3'b101, 3'b110, 3'b111: begin  // CSRRWI, CSRRSI, CSRRCI
-                        reg_we     = 1;        // read CSR into rd
-                        csr_we     = 1;        // write to CSR
-                        csr_addr   = funct12;  // CSR address in bits [31:20]
+                        reg_we     = 1;        // read CSR into rd (write to x0 is harmless)
+                        // CSRRW/CSRRWI always write; CSRRS/CSRRC/CSRRSI/CSRRCI
+                        // only write when rs1/uimm != 0 (per RISC-V spec)
+                        csr_we     = (funct3 == 3'b001 || funct3 == 3'b101) ? 1'b1
+                                   : (instr[19:15] != 5'b00000);
+                        csr_addr   = funct12;  // CSR address in instr[31:20]
                         csr_funct3 = funct3;
-                        wb_sel     = 2'b11;    // new wb_sel: 11 = CSR read data
+                        wb_sel     = 2'b00;    // CSR read value flows through ALU result path
                         imm_sel    = IMM_I;
                     end
                     default: illegal = 1;
