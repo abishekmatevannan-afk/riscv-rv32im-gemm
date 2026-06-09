@@ -33,14 +33,15 @@ module tb_hazard_unit;
         .id_ex_stall      (id_ex_stall),
         .ex_mem_stall     (ex_mem_stall),
         .mem_wb_stall     (mem_wb_stall),
-        .branch_mispredict(branch_mispredict)
+        .branch_mispredict(branch_mispredict),
         .trap             (trap),
         .ex_mret          (ex_mret)
     );
 
     task automatic check(
-        input       mem_re, branch, jump, taken, cs, trap, ex_mret,
+        input       mem_re, branch, jump, taken, cs,
         input [4:0] ex_rd, id_rs1, id_rs2,
+        input       in_trap, in_ex_mret,
         input       exp_pc_stall, exp_if_id_stall,
         input       exp_if_id_flush, exp_id_ex_flush,
         input string name
@@ -55,8 +56,8 @@ module tb_hazard_unit;
         ex_rd_addr   = ex_rd;
         id_rs1_addr  = id_rs1;
         id_rs2_addr  = id_rs2;
-        trap         = trap;
-        ex_mret      = ex_mret;
+        trap         = in_trap;
+        ex_mret      = in_ex_mret;
         
         #10;
 
@@ -78,18 +79,18 @@ module tb_hazard_unit;
 
         // cs=0 for all normal tests
         check(0, 0, 0, 0, 0, 5'd1, 5'd2, 5'd3, 0, 0, 0, 0, 0, 0, "no hazard");
-        check(1, 0, 0, 0, 0, 5'd1, 5'd1, 5'd2, 1, 1, 0, 1, 0, 0, "load-use rs1");
-        check(1, 0, 0, 0, 0, 5'd1, 5'd2, 5'd1, 1, 1, 0, 1, "load-use rs2");
-        check(1, 0, 0, 0, 0, 5'd1, 5'd2, 5'd3, 0, 0, 0, 0, "load no match");
-        check(0, 1, 0, 1, 0, 5'd0, 5'd0, 5'd0, 0, 0, 1, 1, "branch taken");
-        check(0, 1, 0, 0, 0, 5'd0, 5'd0, 5'd0, 0, 0, 0, 0, "branch not taken");
-        check(0, 0, 1, 0, 0, 5'd0, 5'd0, 5'd0, 0, 0, 1, 1, "jump flush");
-        check(1, 1, 0, 1, 0, 5'd1, 5'd1, 5'd2, 1, 1, 1, 1, "load-use + branch taken");
+        check(1, 0, 0, 0, 0, 5'd1, 5'd1, 5'd2, 0, 0, 1, 1, 0, 1, "load-use rs1");
+        check(1, 0, 0, 0, 0, 5'd1, 5'd2, 5'd1, 0, 0, 1, 1, 0, 1, "load-use rs2");
+        check(1, 0, 0, 0, 0, 5'd1, 5'd2, 5'd3, 0, 0, 0, 0, 0, 0, "load no match");
+        check(0, 1, 0, 1, 0, 5'd0, 5'd0, 5'd0, 0, 0, 0, 0, 1, 1, "branch taken");
+        check(0, 1, 0, 0, 0, 5'd0, 5'd0, 5'd0, 0, 0, 0, 0, 0, 0, "branch not taken");
+        check(0, 0, 1, 0, 0, 5'd0, 5'd0, 5'd0, 0, 0, 0, 0, 1, 1, "jump flush");
+        check(1, 1, 0, 1, 0, 5'd1, 5'd1, 5'd2, 0, 0, 1, 1, 1, 1, "load-use + branch taken");
 
         // cache stall tests — flushes suppressed
-        check(0, 1, 0, 1, 1, 5'd0, 5'd0, 5'd0, 1, 1, 0, 0, "branch taken + cache stall");
-        check(0, 0, 1, 0, 1, 5'd0, 5'd0, 5'd0, 1, 1, 0, 0, "jump + cache stall");
-        check(1, 0, 0, 0, 1, 5'd1, 5'd1, 5'd2, 1, 1, 0, 0, "load-use + cache stall");
+        check(0, 1, 0, 1, 1, 5'd0, 5'd0, 5'd0, 0, 0, 1, 1, 0, 0, "branch taken + cache stall");
+        check(0, 0, 1, 0, 1, 5'd0, 5'd0, 5'd0, 0, 0, 1, 1, 0, 0, "jump + cache stall");
+        check(1, 0, 0, 0, 1, 5'd1, 5'd1, 5'd2, 0, 0, 1, 1, 0, 0, "load-use + cache stall");
 
         $display("========== DONE ==========");
         $finish;
