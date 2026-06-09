@@ -10,7 +10,9 @@ $(shell mkdir -p $(SIM_DIR))
 # Integration tests need every source file because they instantiate the full
 # pipeline. Unit tests only need their own module file.
 INTEGRATION = top top_pipeline uart_integration uart_mem_map \
-              exception_test axi4_lite matmul uart_integration_debug
+              exception_test axi4_lite matmul \
+              exception_handler_stack \
+              uart_integration_debug
 
 
 # make sim MODULE=<name>
@@ -90,6 +92,7 @@ test-all:
 # Run every testbench with full verbose output — no pass/fail filtering,
 # everything gets printed. Useful when you want to read raw simulation output
 # without the summary wrapper, or when debugging a new testbench.
+#   Example: make all
 #   Output:  full simulation output for every module, one after another
 all:
 	@for tb in $(TB_DIR)/tb_*.sv; do \
