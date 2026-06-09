@@ -1,49 +1,64 @@
 # RV32I RISC-V CPU Core
 
-A fully functional RV32I RISC-V processor implemented from scratch in SystemVerilog, featuring a 5-stage pipeline, hazard handling, memory-mapped UART peripheral, and custom SIMD extensions for packed arithmetic.
+A complete RV32I RISC-V processor implemented from scratch in SystemVerilog. Features a 5-stage pipeline with full hazard handling, split 4KB L1 cache hierarchy backed by an AXI4-Lite memory fabric, 2-bit branch predictor, M-mode exception handling, memory-mapped UART with TX/RX, hardware performance counters, and custom SIMD extensions benchmarked at **15.6x speedup** on INT8 matrix multiply.
 
 ---
 
-## Architecture Overview
+## Architecture
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph Pipeline["5-Stage Pipeline"]
-        IF["IF\nInstruction\nFetch"]
-        ID["ID\nInstruction\nDecode"]
-        EX["EX\nExecute"]
-        MEM["MEM\nMemory\nAccess"]
-        WB["WB\nWrite\nBack"]
+        IF["IF\nFetch + Predict"]
+        ID["ID\nDecode + CSR"]
+        EX["EX\nExecute + Exception"]
+        MEM["MEM\nCache / IO"]
+        WB["WB\nWriteback"]
         IF --> ID --> EX --> MEM --> WB
     end
 
-    subgraph Hazard["Hazard Handling"]
-        HU["Hazard Unit\nLoad-use stall\nBranch flush"]
+    subgraph Hazards["Hazard Control"]
+        HU["Hazard Unit\nload-use · branch flush\ncache stall · trap flush"]
         FU["Forward Unit\nEX/MEM → EX\nMEM/WB → EX"]
+        BP["Branch Predictor\n2-bit BHT · BTB\n64 entries"]
     end
 
-    subgraph Memory["Memory & Peripherals"]
-        IMEM["Instruction\nMemory\n1KB ROM"]
-        DMEM["Data\nMemory\n1KB RAM"]
-        UART["UART TX\n0xFFFF0000\n9600 baud"]
+    subgraph Caches["L1 Cache Hierarchy"]
+        IC["I$ 4KB\ndirect-mapped\nread-only"]
+        DC["D$ 4KB\ndirect-mapped\nwrite-back\nwrite-allocate"]
     end
 
-    subgraph Extensions["Execution Units"]
-        ALU["ALU\n32-bit"]
-        SIMD["SIMD ALU\nPADD PSUB\nPMUL PDOT"]
+    subgraph Fabric["AXI4-Lite Fabric"]
+        XBAR["Interconnect\n2M · 2S"]
+        ISRAM["ISRAM\n32KB"]
+        DSRAM["DSRAM\n256KB"]
+    end
+
+    subgraph IO["Memory-Mapped IO"]
+        UART["UART TX/RX\n0xFFFF0000\n8-entry FIFO"]
+        PMU["PMU\n0xFFFF2000\n8 counters"]
+        CSR["CSR File\nmtvec · mepc\nmcause · mstatus"]
+        EXC["Exception Unit\nECALL · IRQ\nillegal · misalign"]
+    end
+
+    subgraph Exec["Execution Units"]
+        ALU["ALU 32-bit"]
+        SIMD["SIMD ALU\nPADD · PSUB\nPMUL · PDOT"]
         RF["Register File\n32 × 32-bit"]
     end
 
-    IF --> IMEM
-    EX --> ALU
-    EX --> SIMD
+    IF --> IC
+    IC --> Fabric
+    MEM --> DC
+    DC --> Fabric
+    EX --> ALU & SIMD
     ID --> RF
     WB --> RF
-    MEM --> DMEM
-    MEM --> UART
-    HU -.stall/flush.-> IF
-    HU -.stall/flush.-> ID
+    MEM --> UART & PMU
+    EX --> EXC --> CSR
+    HU -.stall/flush.-> IF & ID & EX
     FU -.forward.-> EX
+    BP -.predict.-> IF
 ```
 
 ---
@@ -51,28 +66,89 @@ flowchart LR
 ## Features
 
 ### RV32I Base ISA
-Full implementation of all 37 base integer instructions across all six instruction formats — R, I, S, B, U, and J types. Includes arithmetic, logical, shift, branch, jump, and memory load/store operations.
+All 37 base integer instructions across all six formats — R, I, S, B, U, J. Includes arithmetic, logical, shift, branch, jump, and all load/store widths (byte, halfword, word with sign/zero extension).
 
 ### 5-Stage Pipeline
-Classic fetch-decode-execute-memory-writeback pipeline with full hazard handling:
-- **Data forwarding** — EX/MEM and MEM/WB forwarding paths eliminate stalls for most data hazards
-- **Load-use hazard detection** — automatic 1-cycle stall when a load result is needed immediately
-- **Branch flush** — IF/ID and ID/EX registers flushed on taken branches to prevent incorrect execution
+- **Data forwarding** — EX/MEM and MEM/WB paths eliminate stalls for most data hazards; EX/MEM takes priority when both paths target the same register
+- **Load-use stall** — 1-cycle bubble when a load result is consumed immediately by the next instruction
+- **Branch predictor** — 2-bit saturating counter BHT with 64-entry BTB; flushes only on misprediction, not on every taken branch
+- **Cache stall** — all five stages frozen during dcache miss; only IF/ID frozen during icache miss with bubble insertion
 
-### Memory-Mapped UART
-A memory-mapped UART peripheral accessible at base address `0xFFFF0000`. CPU assembly programs write characters directly to the TX register and poll the status register for readiness. Verified end-to-end by transmitting ASCII "HELLO" from CPU-executed code.
+### L1 Cache Hierarchy
+| Cache | Size | Organization | Policy |
+|-------|------|-------------|--------|
+| Instruction | 4KB | 256 lines × 16 bytes, direct-mapped | Read-only, flush on mispredict |
+| Data | 4KB | 256 lines × 16 bytes, direct-mapped | Write-back, write-allocate |
+
+Both caches back onto a custom AXI4-Lite fabric connecting to separate 32KB instruction SRAM and 256KB data SRAM.
+
+### AXI4-Lite Memory Fabric
+Separate icache and dcache managers route through an address-decoded interconnect to independent ISRAM and DSRAM subordinates. Harvard architecture maintained throughout: instruction and data paths never share a bus transaction.
+
+### M-Mode Exception Handling
+Full trap/return pipeline: ECALL, illegal instruction, load/store misalign, external IRQ. CSR instructions CSRRW, CSRRS, CSRRC with spec-compliant suppression of CSR writes when rs1=x0. MRET returns to mepc.
+
+### UART TX/RX
+Memory-mapped at `0xFFFF0000`. 8-entry TX FIFO, 8N1 framing, status register polling. RX path with 2-flop synchronizer, falling-edge start-bit detection, and IRQ output. Verified end-to-end in simulation.
+
+### Hardware PMU
+8 read-only counters at `0xFFFF2000`:
+
+| Offset | Counter |
+|--------|---------|
+| +0x00 | Cycle count |
+| +0x04 | Instructions retired |
+| +0x08 | Branches executed |
+| +0x0C | Branch mispredictions |
+| +0x10 | D$ hits |
+| +0x14 | D$ misses |
+| +0x18 | I$ hits |
+| +0x1C | I$ misses |
 
 ### Custom SIMD Extensions
-Four custom instructions using RISC-V's reserved custom opcode space (`0001011`), operating on 32-bit registers as packed 4x8-bit vectors:
+Four instructions at RISC-V custom opcode `0001011`, operating on 32-bit registers as packed 4×8-bit vectors:
 
-| Instruction | Operation | Description |
-|-------------|-----------|-------------|
-| PADD | `rd[i] = rs1[i] + rs2[i]` | Packed 8-bit add, 4 lanes |
-| PSUB | `rd[i] = rs1[i] - rs2[i]` | Packed 8-bit subtract, 4 lanes |
-| PMUL | `rd[i] = rs1[i] * rs2[i]` | Packed 8-bit multiply, lower 8 bits |
-| PDOT | `rd = Σ rs1[i] * rs2[i]` | 4-element integer dot product |
+| Instruction | Operation | Use case |
+|-------------|-----------|---------|
+| `PADD rd, rs1, rs2` | `rd[i] = rs1[i] + rs2[i]` | Packed 8-bit add |
+| `PSUB rd, rs1, rs2` | `rd[i] = rs1[i] - rs2[i]` | Packed 8-bit subtract |
+| `PMUL rd, rs1, rs2` | `rd[i] = rs1[i] × rs2[i]` | Packed 8-bit multiply |
+| `PDOT rd, rs1, rs2` | `rd = Σ rs1[i] × rs2[i]` | 4-element dot product |
 
-PDOT maps directly to the multiply-accumulate operation at the core of neural network inference.
+PDOT maps directly to the multiply-accumulate at the core of INT8 neural network inference.
+
+---
+
+## Benchmark Results
+
+4×4 INT8 matrix multiply (A × I = A), measured via hardware PMU:
+
+| Metric | Scalar | SIMD | Notes |
+|--------|--------|------|-------|
+| Cycles | 4329 | 277 | **15.6× speedup** |
+| Instructions | 3051 | 201 | |
+| CPI | 1.419 | 1.378 | |
+| D$ hit rate | 98.3% | 96.2% | |
+| Branch misprediction | 9.6% | 35.0% | Short SIMD loop, predictor not trained |
+
+Scalar uses shift-and-add multiply (RV32I has no MUL). SIMD uses a single PDOT per output element. The speedup comes entirely from instruction throughput — the memory access pattern is identical in both versions.
+
+---
+
+## Memory Map
+
+| Address | Size | Description |
+|---------|------|-------------|
+| `0x00000000` | 32KB | Instruction SRAM (via I$) |
+| `0x00000000` | 256KB | Data SRAM (via D$, separate Harvard path) |
+| `0x00001000` | 16B | Matrix A (benchmark) |
+| `0x00001010` | 16B | Matrix B transposed (benchmark) |
+| `0x00001020` | 16B | Matrix C output (benchmark) |
+| `0xFFFF0000` | 4B | UART TX data |
+| `0xFFFF0004` | 4B | UART TX status (bit 0 = FIFO not full) |
+| `0xFFFF0008` | 4B | UART RX data |
+| `0xFFFF000C` | 4B | UART RX status (bit 0 = data valid) |
+| `0xFFFF2000` | 32B | PMU counters (8 × 4B) |
 
 ---
 
@@ -81,153 +157,159 @@ PDOT maps directly to the multiply-accumulate operation at the core of neural ne
 ```
 rv32i-core/
 ├── src/
-│   ├── alu.sv                # 32-bit ALU
-│   ├── register_file.sv      # 32x32-bit register file, 2R/1W ports
-│   ├── program_counter.sv    # PC with stall and branch support
-│   ├── instruction_memory.sv # ROM, initialized from hex file
-│   ├── data_memory.sv        # 1KB byte-addressable RAM
-│   ├── control_unit.sv       # Instruction decoder, control signals
-│   ├── simd_alu.sv           # Custom SIMD extension unit
-│   ├── uart_tx.sv            # UART transmitter FSM, 8N1
-│   ├── uart_mem_map.sv       # Memory-mapped UART interface
-│   ├── if_id_reg.sv          # IF/ID pipeline register
-│   ├── id_ex_reg.sv          # ID/EX pipeline register
-│   ├── ex_mem_reg.sv         # EX/MEM pipeline register
-│   ├── mem_wb_reg.sv         # MEM/WB pipeline register
-│   ├── forward_unit.sv       # Forwarding path logic
-│   ├── hazard_unit.sv        # Hazard detection and stall/flush
-│   ├── top.sv                # Single-cycle top level
-│   └── top_pipeline.sv       # Pipelined top level
+│   ├── top_pipeline.sv           # Pipelined top level (main)
+│   ├── top.sv                    # Single-cycle top level (regression baseline)
+│   ├── program_counter.sv
+│   ├── if_id_reg.sv
+│   ├── id_ex_reg.sv
+│   ├── ex_mem_reg.sv
+│   ├── mem_wb_reg.sv
+│   ├── register_file.sv
+│   ├── alu.sv
+│   ├── simd_alu.sv               # PADD PSUB PMUL PDOT
+│   ├── control_unit.sv           # All RV32I opcodes + SYSTEM + CSR
+│   ├── forward_unit.sv
+│   ├── hazard_unit.sv
+│   ├── branch_predictor.sv       # 2-bit BHT + BTB
+│   ├── dcache.sv                 # 4KB direct-mapped WB/WA
+│   ├── icache.sv                 # 4KB direct-mapped read-only
+│   ├── axi4_lite_icache_manager.sv
+│   ├── axi4_lite_dcache_manager.sv
+│   ├── axi4_lite_sram_sub.sv     # Parameterized SRAM subordinate
+│   ├── axi4_lite_uart_sub.sv     # UART subordinate (written, pending connection)
+│   ├── axi4_lite_interconnect.sv # 2-manager 2-subordinate fabric
+│   ├── uart_tx.sv
+│   ├── uart_rx.sv
+│   ├── uart_mem_map.sv
+│   ├── csr_regfile.sv
+│   ├── exception_unit.sv
+│   └── perf_counters.sv
 ├── tb/
-│   ├── tb_alu.sv
-│   ├── tb_register_file.sv
-│   ├── tb_program_counter.sv
-│   ├── tb_instruction_memory.sv
-│   ├── tb_control_unit.sv
-│   ├── tb_data_memory.sv
-│   ├── tb_forward_unit.sv
-│   ├── tb_hazard_unit.sv
-│   ├── tb_simd_alu.sv
-│   ├── tb_uart_tx.sv
-│   ├── tb_uart_integration.sv
-│   ├── tb_uart_integration_debug.sv
-│   ├── tb_top.sv
-│   └── tb_top_pipeline.sv
+│   ├── tb_top_pipeline.sv        # Full pipeline integration (12/12)
+│   ├── tb_icache.sv              # Icache standalone (29/29)
+│   ├── tb_dcache.sv
+│   ├── tb_hazard_unit.sv         # (11/11)
+│   ├── tb_axi4_lite.sv           # AXI fabric
+│   ├── tb_uart_rx.sv
+│   ├── tb_exception_test.sv
+│   ├── tb_matmul.sv              # Scalar vs SIMD benchmark
+│   └── tb_top.sv                 # Single-cycle regression
 ├── programs/
-│   ├── test1.hex             # Arithmetic, branch, loop program
-│   ├── test2.hex             # Memory load/store, logic, LUI
-│   └── uart_hello.hex        # UART HELLO transmission program
+│   ├── test1.hex                 # Arithmetic, branch, loop
+│   ├── test2.hex                 # Memory, logic, LUI
+│   ├── exception_test.hex        # ECALL, MRET, CSR
+│   ├── matmul_scalar.hex         # 4×4 INT8 matrix multiply, shift-and-add
+│   └── matmul_simd.hex           # 4×4 INT8 matrix multiply, PDOT
 └── Makefile
 ```
 
 ---
 
-## Tools
-
-| Tool | Purpose |
-|------|---------|
-| SystemVerilog | Hardware description language |
-| Icarus Verilog | Open-source RTL simulator |
-| Wavetrace / GTKWave | Waveform analysis |
-| GNU Make | Build automation |
-| Git | Version control |
-
----
-
-## Building and Simulating
+## Getting Started
 
 ### Prerequisites
+
 ```bash
-brew install icarus-verilog  # macOS
-sudo apt install iverilog    # Ubuntu/WSL
+# macOS
+brew install icarus-verilog
+
+# Ubuntu / WSL
+sudo apt install iverilog
+
+# Verify
+iverilog -V
 ```
 
-### Run a specific module testbench
+Clone the repository:
+
+```bash
+git clone https://github.com/abishekmatevannan-afk/rv32i-core-cpu.git
+cd rv32i-core-cpu
+mkdir -p sim
+```
+
+### Run individual module tests
+
 ```bash
 make sim MODULE=alu
 make sim MODULE=register_file
-make sim MODULE=control_unit
-make sim MODULE=forward_unit
 make sim MODULE=hazard_unit
+make sim MODULE=icache
+make sim MODULE=dcache
 make sim MODULE=simd_alu
-make sim MODULE=uart_tx
+make sim MODULE=uart_rx
+make sim MODULE=axi4_lite
 ```
 
-### Run full CPU integration tests
+### Run full pipeline integration
+
 ```bash
-make sim MODULE=top           # single-cycle
-make sim MODULE=top_pipeline  # pipelined
+make sim MODULE=top_pipeline    # 5-stage pipeline, test1 + test2
+make sim MODULE=top             # single-cycle regression
 ```
 
-### Run UART integration test
+### Run the matrix multiply benchmark
+
 ```bash
-make sim MODULE=uart_integration
+make sim MODULE=matmul
+```
+
+Expected output:
+```
+Scalar:  4329 cycles  3051 instrs  CPI=1.419
+SIMD:    277 cycles  201 instrs  CPI=1.378
+Speedup: 15.63x
+D$ hit rate: 98.3%
 ```
 
 ### View waveforms
+
 ```bash
-make wave MODULE=alu
+make wave MODULE=top_pipeline
+make wave MODULE=icache
 ```
 
 ---
 
-## Test Programs
+## Verification
 
-### test1.hex — Arithmetic, Branch, Loop
-```asm
-addi x1, x0, 5        # x1 = 5
-addi x2, x0, 10       # x2 = 10
-add  x3, x1, x2       # x3 = 15
-addi x4, x0, 5        # x4 = 5
-addi x5, x0, 0        # x5 = 0 (accumulator)
-addi x6, x0, 10       # x6 = 10 (loop counter)
-loop:
-add  x5, x5, x3       # x5 += 15
-addi x6, x6, -1       # x6--
-bne  x6, x0, loop     # repeat 10 times
-# result: x5 = 150, x6 = 0
-```
-
-### test2.hex — Memory and Logic
-Covers SW, LW, SH, LHU, LH, LBU, SLT, LUI, XOR, OR, AND across multiple registers and addresses.
-
-### uart_hello.hex
-Polls UART status register and transmits H, E, L, L, O, newline sequentially. Verified to produce correct ASCII output in simulation.
+| Module | Tests | Status |
+|--------|-------|--------|
+| ALU | All operations | ✅ |
+| Register file | Dual-read, x0 hardwired | ✅ |
+| Control unit | All opcodes, funct3/funct7 | ✅ |
+| Forward unit | EX/MEM and MEM/WB paths | ✅ |
+| Hazard unit | 11/11 | ✅ |
+| D$ cache | Miss, fill, writeback, IO bypass | ✅ |
+| I$ cache | 29/29 | ✅ |
+| Branch predictor | BHT update, BTB, mispredict flush | ✅ |
+| AXI4-Lite fabric | 7 test groups | ✅ |
+| UART TX/RX | 8N1 framing, FIFO, IRQ | ✅ |
+| Exception handling | ECALL, MRET, illegal, IRQ | ✅ |
+| Single-cycle CPU | test1, test2 | ✅ |
+| Pipelined CPU | test1, test2, exception, matmul | ✅ |
 
 ---
 
-## Verification Status
+## Known Limitations
 
-| Module | Status |
-|--------|--------|
-| ALU | ✅ All operations verified |
-| Register File | ✅ Dual-port read, x0 hardwired zero |
-| Program Counter | ✅ Sequential, branch, jump, reset |
-| Instruction Memory | ✅ Hex file load, word-aligned read |
-| Control Unit | ✅ All opcodes, funct3, funct7 combinations |
-| Data Memory | ✅ Byte, halfword, word R/W, sign extension |
-| Forward Unit | ✅ EX/MEM and MEM/WB forwarding, priority |
-| Hazard Unit | ✅ Load-use stall, branch flush, jump flush |
-| SIMD ALU | ✅ PADD, PSUB, PMUL, PDOT |
-| UART TX | ✅ 8N1 framing, all ASCII characters |
-| UART Integration | ✅ End-to-end HELLO transmission |
-| Single-cycle CPU | ✅ Both test programs passing |
-| Pipelined CPU | ✅ Both test programs passing |
+- **No FPGA synthesis yet** — target is Xilinx Arty A7 or Nexys A7. FPGA Fmax and LUT count not yet measured.
+- **Direct-mapped caches** — conflict misses will occur for working sets that alias to the same cache index. 2-way set associative is the natural next step.
+- **UART not yet on AXI4-Lite bus** — `axi4_lite_uart_sub.sv` is written and tested standalone; connecting it requires extending the interconnect to three subordinates and adding a one-cycle IO stall.
+- **BTB has no tag bits** — addresses differing by 256 bytes alias to the same BTB entry. Low impact for small programs; real workloads would need tag-based filtering.
 
 ---
 
-## What I Learned
+## Tools
 
-Building this project from scratch in SystemVerilog taught me things that coursework alone didnt really cover. The single-cycle implementation was straightforward, unfortunately the complications came in the pipeline. Getting forwarding right requires thinking precisely about which stage each value is in at every clock cycle. The load-use hazard is a good example of a case where forwarding alone isn't sufficient and you need to stall.
-
-The UART peripheral taught me about the hardware/software interface aspect that I haven't been exposed to much, the main thing being how a CPU communicates with the outside world through memory-mapped registers and polling. The SIMD extension showed me how ML accelerators are fundamentally just chips that do packed multiply-accumulate very efficiently at scale.
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Icarus Verilog | 11+ | RTL simulation |
+| GTKWave / Wavetrace | any | Waveform analysis |
+| GNU Make | any | Build automation |
+| Python 3 | 3.9+ | RISC-V assembler (`encode2.py`) |
+| Git | any | Version control |
 
 ---
 
-## Future Work that should be done or I might do on a whim
-
-- [ ] FPGA synthesis and hardware demo (any Vivado-compatible board)
-- [ ] Digital oscilloscope peripheral using FPGA ADC
-- [ ] Branch predictor (2-bit saturating counter)
-- [ ] Instruction cache (direct-mapped)
-- [ ] Performance counters (cycles, instructions retired, cache hits)
+*2nd year Computer Engineering — Toronto Metropolitan University*
