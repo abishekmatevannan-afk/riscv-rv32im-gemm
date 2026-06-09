@@ -24,10 +24,13 @@ module top_pipeline #(
     logic        ex_predict_taken;
     logic        mispredict;
 
-    // UART signals
+    // UART / IO signals
     // =========================================================
-    logic        uart_we;
-    logic [31:0] uart_rd;
+    // io_m_rd   : read data returned by the IO manager (replaces uart_rd)
+    // is_uart   : gates the IO manager — same as is_io but excludes PMU
+    // is_io     : true for any 0xFFFF.... address (UART and PMU)
+    logic [31:0] io_m_rd;
+    logic        is_uart;
     logic        is_io;
 
     // IF STAGE SIGNALS
@@ -180,6 +183,20 @@ module top_pipeline #(
     logic [31:0] dc_m_rdata;
     logic [1:0]  dc_m_rresp;
 
+    // IO manager → interconnect (AW/W/B/AR/R)
+    logic        io_m_awvalid, io_m_awready;
+    logic [31:0] io_m_awaddr;
+    logic        io_m_wvalid,  io_m_wready;
+    logic [31:0] io_m_wdata;
+    logic [3:0]  io_m_wstrb;
+    logic        io_m_bvalid,  io_m_bready;
+    logic [1:0]  io_m_bresp;
+    logic        io_m_arvalid, io_m_arready;
+    logic [31:0] io_m_araddr;
+    logic        io_m_rvalid,  io_m_rready;
+    logic [31:0] io_m_rdata;
+    logic [1:0]  io_m_rresp;
+
     // interconnect → ISRAM subordinate (s0, read-only)
     logic        s0_arvalid, s0_arready;
     logic [31:0] s0_araddr;
@@ -200,6 +217,20 @@ module top_pipeline #(
     logic        s1_rvalid,  s1_rready;
     logic [31:0] s1_rdata;
     logic [1:0]  s1_rresp;
+
+    // interconnect → UART subordinate (s2, read/write)
+    logic        s2_awvalid, s2_awready;
+    logic [31:0] s2_awaddr;
+    logic        s2_wvalid,  s2_wready;
+    logic [31:0] s2_wdata;
+    logic [3:0]  s2_wstrb;
+    logic        s2_bvalid,  s2_bready;
+    logic [1:0]  s2_bresp;
+    logic        s2_arvalid, s2_arready;
+    logic [31:0] s2_araddr;
+    logic        s2_rvalid,  s2_rready;
+    logic [31:0] s2_rdata;
+    logic [1:0]  s2_rresp;
 
     // dcache → dcache manager intermediate wires
     // (replaces old dmem_* wires that went directly to data_memory)
@@ -270,13 +301,36 @@ module top_pipeline #(
         .rresp   (dc_m_rresp),   .rready(dc_m_rready)
     );
 
-    // interconnect: icache→ISRAM, dcache→DSRAM, no arbitration needed
+    // IO manager: generates AXI transactions for UART loads and stores.
+    // Purely combinational — UART sub responds same cycle (rvalid=arvalid),
+    // so the pipeline timing is identical to the old direct connection.
+    assign is_uart = is_io && !is_perf;
+
+    axi4_lite_io_manager IO_MGR (
+        .io_active (is_uart),
+        .mem_re    (mem_mem_re),
+        .mem_we    (mem_mem_we),
+        .mem_addr  (mem_alu_result),
+        .mem_wdata (mem_rs2_data),
+        .io_rd     (io_m_rd),
+        .arvalid   (io_m_arvalid), .arready(io_m_arready), .araddr(io_m_araddr),
+        .rvalid    (io_m_rvalid),  .rready (io_m_rready),
+        .rdata     (io_m_rdata),   .rresp  (io_m_rresp),
+        .awvalid   (io_m_awvalid), .awready(io_m_awready), .awaddr(io_m_awaddr),
+        .wvalid    (io_m_wvalid),  .wready (io_m_wready),
+        .wdata     (io_m_wdata),   .wstrb  (io_m_wstrb),
+        .bvalid    (io_m_bvalid),  .bready (io_m_bready)
+    );
+
+    // interconnect: icache→ISRAM, dcache→DSRAM, IO manager→UART
     axi4_lite_interconnect XBAR (
+        // M0: icache → S0: ISRAM
         .m0_arvalid(ic_m_arvalid), .m0_arready(ic_m_arready),
         .m0_araddr (ic_m_araddr),
         .m0_rvalid (ic_m_rvalid),  .m0_rready (ic_m_rready),
         .m0_rdata  (ic_m_rdata),   .m0_rresp  (ic_m_rresp),
 
+        // M1: dcache → S1: DSRAM
         .m1_awvalid(dc_m_awvalid), .m1_awready(dc_m_awready), .m1_awaddr(dc_m_awaddr),
         .m1_wvalid (dc_m_wvalid),  .m1_wready (dc_m_wready),
         .m1_wdata  (dc_m_wdata),   .m1_wstrb  (dc_m_wstrb),
@@ -285,21 +339,40 @@ module top_pipeline #(
         .m1_rvalid (dc_m_rvalid),  .m1_rready (dc_m_rready),
         .m1_rdata  (dc_m_rdata),   .m1_rresp  (dc_m_rresp),
 
+        // M2: IO manager → S2: UART subordinate
+        .m2_awvalid(io_m_awvalid), .m2_awready(io_m_awready), .m2_awaddr(io_m_awaddr),
+        .m2_wvalid (io_m_wvalid),  .m2_wready (io_m_wready),
+        .m2_wdata  (io_m_wdata),   .m2_wstrb  (io_m_wstrb),
+        .m2_bvalid (io_m_bvalid),  .m2_bready (io_m_bready),  .m2_bresp (io_m_bresp),
+        .m2_arvalid(io_m_arvalid), .m2_arready(io_m_arready), .m2_araddr(io_m_araddr),
+        .m2_rvalid (io_m_rvalid),  .m2_rready (io_m_rready),
+        .m2_rdata  (io_m_rdata),   .m2_rresp  (io_m_rresp),
+
+        // S0: ISRAM
         .s0_arvalid(s0_arvalid), .s0_arready(s0_arready), .s0_araddr(s0_araddr),
         .s0_rvalid (s0_rvalid),  .s0_rready (s0_rready),
         .s0_rdata  (s0_rdata),   .s0_rresp  (s0_rresp),
 
+        // S1: DSRAM
         .s1_awvalid(s1_awvalid), .s1_awready(s1_awready), .s1_awaddr(s1_awaddr),
         .s1_wvalid (s1_wvalid),  .s1_wready (s1_wready),
         .s1_wdata  (s1_wdata),   .s1_wstrb  (s1_wstrb),
         .s1_bvalid (s1_bvalid),  .s1_bready (s1_bready),  .s1_bresp (s1_bresp),
         .s1_arvalid(s1_arvalid), .s1_arready(s1_arready), .s1_araddr(s1_araddr),
         .s1_rvalid (s1_rvalid),  .s1_rready (s1_rready),
-        .s1_rdata  (s1_rdata),   .s1_rresp  (s1_rresp)
+        .s1_rdata  (s1_rdata),   .s1_rresp  (s1_rresp),
+
+        // S2: UART subordinate
+        .s2_awvalid(s2_awvalid), .s2_awready(s2_awready), .s2_awaddr(s2_awaddr),
+        .s2_wvalid (s2_wvalid),  .s2_wready (s2_wready),
+        .s2_wdata  (s2_wdata),   .s2_wstrb  (s2_wstrb),
+        .s2_bvalid (s2_bvalid),  .s2_bready (s2_bready),  .s2_bresp (s2_bresp),
+        .s2_arvalid(s2_arvalid), .s2_arready(s2_arready), .s2_araddr(s2_araddr),
+        .s2_rvalid (s2_rvalid),  .s2_rready (s2_rready),
+        .s2_rdata  (s2_rdata),   .s2_rresp  (s2_rresp)
     );
 
     // ISRAM: read-only instruction SRAM, initialized from HEX_FILE
-    // Replaces instruction_memory module
     axi4_lite_sram_sub #(
         .DEPTH_WORDS(256),
         .HEX_FILE   (HEX_FILE),
@@ -316,7 +389,6 @@ module top_pipeline #(
     );
 
     // DSRAM: read/write data SRAM, zero-initialized
-    // Replaces data_memory module
     axi4_lite_sram_sub #(
         .DEPTH_WORDS(256),
         .HEX_FILE   (""),
@@ -331,6 +403,22 @@ module top_pipeline #(
         .wvalid (s1_wvalid),  .wready (s1_wready),
         .wdata  (s1_wdata),   .wstrb  (s1_wstrb),
         .bvalid (s1_bvalid),  .bready (s1_bready),  .bresp(s1_bresp)
+    );
+
+    // UART subordinate: wraps uart_mem_map with an AXI4-Lite interface
+    axi4_lite_uart_sub #(.CLKS_PER_BIT(CLKS_PER_BIT)) UART_SUB (
+        .clk         (clk),
+        .rst         (rst),
+        .arvalid     (s2_arvalid), .arready(s2_arready), .araddr(s2_araddr),
+        .rvalid      (s2_rvalid),  .rready (s2_rready),
+        .rdata       (s2_rdata),   .rresp  (s2_rresp),
+        .awvalid     (s2_awvalid), .awready(s2_awready), .awaddr(s2_awaddr),
+        .wvalid      (s2_wvalid),  .wready (s2_wready),
+        .wdata       (s2_wdata),   .wstrb  (s2_wstrb),
+        .bvalid      (s2_bvalid),  .bready (s2_bready),  .bresp (s2_bresp),
+        .uart_tx_pin (uart_tx_pin),
+        .uart_rx_pin (uart_rx_pin),
+        .uart_irq    (uart_irq)
     );
 
     // icache: sits between PC and IF/ID, fills from ISRAM via fabric
@@ -613,8 +701,8 @@ module top_pipeline #(
     // MEM STAGE
     // =========================================================
 
-    // dcache: fills from DSRAM via AXI4-Lite fabric
-    // dmem_* wires connect dcache memory port to dcache manager
+    // dcache: fills from DSRAM via AXI4-Lite fabric.
+    // IO addresses (is_io=1) bypass the cache entirely.
     dcache DCACHE (
         .clk         (clk),
         .rst         (rst),
@@ -636,26 +724,10 @@ module top_pipeline #(
         .is_io       (is_io)
     );
 
-    // IO write enable — only write to UART when address is in IO region
-    assign uart_we = mem_mem_we && is_io && !is_perf;
-
-    uart_mem_map #(.CLKS_PER_BIT(CLKS_PER_BIT)) UART_MAP (
-        .clk         (clk),
-        .rst         (rst),
-        .we          (uart_we),
-        .re          (mem_mem_re && is_io && !is_perf),
-        .addr        (mem_alu_result),
-        .wd          (mem_rs2_data),
-        .rd          (uart_rd),
-        .uart_tx_pin (uart_tx_pin),
-        .uart_rx_pin (uart_rx_pin),
-        .irq         (uart_irq)
-    );
-
-    // MEM/WB pipeline register
+    // Read data mux: PMU takes priority over UART, both bypass the cache
     logic [31:0] mem_read_data_mux;
     assign mem_read_data_mux = is_perf ? perf_rd :
-                               is_io   ? uart_rd :
+                               is_io   ? io_m_rd :
                                          cache_rd;
 
     mem_wb_reg MEM_WB (
@@ -715,8 +787,12 @@ module top_pipeline #(
     // instruction retired
     assign instr_retired = wb_reg_we;
 
+    // is_io covers all 0xFFFF.... addresses including PMU.
+    // is_perf narrows to the PMU sub-range (0xFFFF20xx).
+    // The dcache bypasses all is_io addresses.
+    // The read mux then selects perf_rd, io_m_rd, or cache_rd in priority order.
     assign is_perf = (mem_alu_result[31:8] == 24'hFFFF20);
-assign is_io   = (mem_alu_result[31:16] == 16'hFFFF);   // PMU also treated as IO
+    assign is_io   = (mem_alu_result[31:16] == 16'hFFFF);
 
     perf_counters PERF (
         .clk           (clk),
