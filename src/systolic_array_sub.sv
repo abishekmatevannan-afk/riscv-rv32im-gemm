@@ -136,10 +136,10 @@ module systolic_array_sub (
             end
         end else begin
 
-            // Write path — accept any time
+            // Write path
             if (awvalid && wvalid) begin
                 case (awaddr[7:0])
-                    8'h00: if (wdata[0]) begin   // CTRL: start
+                    8'h00: if (wdata[0]) begin   // CTRL: start (always accepted)
                         for (int i = 0; i < 4; i++)
                             for (int j = 0; j < 4; j++)
                                 c_acc[i][j] <= 0;
@@ -148,14 +148,15 @@ module systolic_array_sub (
                         cycle_ctr <= 0;
                         running   <= 1;
                     end
-                    8'h10: a_reg[0] <= wdata;
-                    8'h14: a_reg[1] <= wdata;
-                    8'h18: a_reg[2] <= wdata;
-                    8'h1C: a_reg[3] <= wdata;
-                    8'h20: b_reg[0] <= wdata;
-                    8'h24: b_reg[1] <= wdata;
-                    8'h28: b_reg[2] <= wdata;
-                    8'h2C: b_reg[3] <= wdata;
+                    // A/B writes locked out while running to prevent mid-compute corruption
+                    8'h10: if (!running) a_reg[0] <= wdata;
+                    8'h14: if (!running) a_reg[1] <= wdata;
+                    8'h18: if (!running) a_reg[2] <= wdata;
+                    8'h1C: if (!running) a_reg[3] <= wdata;
+                    8'h20: if (!running) b_reg[0] <= wdata;
+                    8'h24: if (!running) b_reg[1] <= wdata;
+                    8'h28: if (!running) b_reg[2] <= wdata;
+                    8'h2C: if (!running) b_reg[3] <= wdata;
                     default: ;
                 endcase
             end

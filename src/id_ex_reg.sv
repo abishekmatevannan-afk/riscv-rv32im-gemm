@@ -56,7 +56,9 @@ module id_ex_reg (
  
     // branch predictor
     input  logic        id_predict_taken,
+    input  logic [31:0] id_predict_target,
     output logic        ex_predict_taken,
+    output logic [31:0] ex_predict_target,
  
     // exception signals
     input  logic        id_valid,
@@ -89,7 +91,8 @@ module id_ex_reg (
             ex_jump          <= 0;
             ex_alu_ctrl      <= 4'b0000;
             ex_funct3        <= 3'b000;
-            ex_predict_taken <= 0;
+            ex_predict_taken  <= 0;
+            ex_predict_target <= 32'd0;
             ex_rs1_data      <= 32'd0;
             ex_rs2_data      <= 32'd0;
             ex_rs1_addr      <= 5'd0;
@@ -116,7 +119,8 @@ module id_ex_reg (
             ex_jump          <= id_jump;
             ex_alu_ctrl      <= id_alu_ctrl;
             ex_funct3        <= id_funct3;
-            ex_predict_taken <= id_predict_taken;
+            ex_predict_taken  <= id_predict_taken;
+            ex_predict_target <= id_predict_target;
             ex_rs1_data      <= id_rs1_data;
             ex_rs2_data      <= id_rs2_data;
             ex_rs1_addr      <= id_rs1_addr;

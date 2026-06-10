@@ -22,6 +22,8 @@ module top_pipeline #(
     logic        bp_predict_taken;
     logic [31:0] bp_predict_target;
     logic        ex_predict_taken;
+    logic [31:0] ex_predict_target;
+    logic        ex_jump_mispredict;
     logic        mispredict;
 
     // UART / IO signals
@@ -29,9 +31,13 @@ module top_pipeline #(
     // io_m_rd   : read data returned by the IO manager (replaces uart_rd)
     // is_uart   : gates the IO manager — same as is_io but excludes PMU
     // is_io     : true for any 0xFFFF.... address (UART and PMU)
+    // accel_rd  : read data from the systolic-array accelerator manager
+    // is_accel  : true for 0xFFFE.... addresses (systolic array register map)
     logic [31:0] io_m_rd;
     logic        is_uart;
     logic        is_io;
+    logic [31:0] accel_rd;
+    logic        is_accel;
 
     // IF STAGE SIGNALS
     // =========================================================
@@ -48,6 +54,7 @@ module top_pipeline #(
     logic [31:0] id_instr;
     logic [31:0] id_pc_plus4;
     logic        id_predict_taken;
+    logic [31:0] id_predict_target;
     logic [6:0]  id_opcode;
     logic [4:0]  id_rs1_addr, id_rs2_addr, id_rd_addr;
     logic [2:0]  id_funct3;
@@ -76,6 +83,9 @@ module top_pipeline #(
     logic [31:0] simd_result;
     logic        simd_valid;
     logic        is_simd;
+    logic [31:0] muldiv_result;
+    logic        is_muldiv;
+    logic        div_busy;
     logic [31:0] ex_result;
 
     logic        ex_reg_we, ex_mem_we, ex_mem_re;
@@ -232,6 +242,34 @@ module top_pipeline #(
     logic [31:0] s2_rdata;
     logic [1:0]  s2_rresp;
 
+    // accel manager → interconnect (AW/W/B/AR/R)
+    logic        ac_m_awvalid, ac_m_awready;
+    logic [31:0] ac_m_awaddr;
+    logic        ac_m_wvalid,  ac_m_wready;
+    logic [31:0] ac_m_wdata;
+    logic [3:0]  ac_m_wstrb;
+    logic        ac_m_bvalid,  ac_m_bready;
+    logic [1:0]  ac_m_bresp;
+    logic        ac_m_arvalid, ac_m_arready;
+    logic [31:0] ac_m_araddr;
+    logic        ac_m_rvalid,  ac_m_rready;
+    logic [31:0] ac_m_rdata;
+    logic [1:0]  ac_m_rresp;
+
+    // interconnect → systolic array subordinate (s3, read/write)
+    logic        s3_awvalid, s3_awready;
+    logic [31:0] s3_awaddr;
+    logic        s3_wvalid,  s3_wready;
+    logic [31:0] s3_wdata;
+    logic [3:0]  s3_wstrb;
+    logic        s3_bvalid,  s3_bready;
+    logic [1:0]  s3_bresp;
+    logic        s3_arvalid, s3_arready;
+    logic [31:0] s3_araddr;
+    logic        s3_rvalid,  s3_rready;
+    logic [31:0] s3_rdata;
+    logic [1:0]  s3_rresp;
+
     // dcache → dcache manager intermediate wires
     // (replaces old dmem_* wires that went directly to data_memory)
     logic        dmem_we, dmem_re;
@@ -245,12 +283,15 @@ module top_pipeline #(
     assign if_pc_plus4  = if_pc + 32'd4;
     assign if_is_branch = (if_instr[6:0] == 7'b1100011);
 
-    assign pc_next = trap             ? mtvec_out  :
-                     ex_mret          ? mepc_out   :
-                     ex_jump          ? ex_pc_jump :
-                     mispredict       ? (ex_branch_taken ? ex_pc_branch : ex_pc_plus4) :
-                     bp_predict_taken ? bp_predict_target :
-                                        if_pc_plus4;
+    assign ex_jump_mispredict = ex_jump &&
+                                (!ex_predict_taken || ex_predict_target != ex_pc_jump);
+
+    assign pc_next = trap                ? mtvec_out  :
+                     ex_mret             ? mepc_out   :
+                     ex_jump_mispredict  ? ex_pc_jump :
+                     mispredict          ? (ex_branch_taken ? ex_pc_branch : ex_pc_plus4) :
+                     bp_predict_taken    ? bp_predict_target :
+                                          if_pc_plus4;
 
     program_counter PC (
         .clk     (clk),
@@ -267,10 +308,10 @@ module top_pipeline #(
         .if_pc           (if_pc),
         .predict_taken   (bp_predict_taken),
         .predict_target  (bp_predict_target),
-        .ex_branch       (ex_branch),
+        .ex_branch       (ex_branch || ex_jump),
         .ex_pc           (ex_pc),
-        .ex_actual_taken (ex_branch_taken),
-        .ex_actual_target(ex_pc_branch)
+        .ex_actual_taken (ex_branch ? ex_branch_taken : 1'b1),
+        .ex_actual_target(ex_jump   ? ex_pc_jump      : ex_pc_branch)
     );
 
     // AXI4-Lite fabric
@@ -304,7 +345,24 @@ module top_pipeline #(
     // IO manager: generates AXI transactions for UART loads and stores.
     // Purely combinational — UART sub responds same cycle (rvalid=arvalid),
     // so the pipeline timing is identical to the old direct connection.
-    assign is_uart = is_io && !is_perf;
+    assign is_uart  = is_io && !is_perf;
+    assign is_accel = (mem_alu_result[31:16] == 16'hFFFE);
+
+    axi4_lite_accel_manager ACCEL_MGR (
+        .accel_active(is_accel),
+        .mem_re      (mem_mem_re),
+        .mem_we      (mem_mem_we),
+        .mem_addr    (mem_alu_result),
+        .mem_wdata   (mem_rs2_data),
+        .accel_rd    (accel_rd),
+        .arvalid     (ac_m_arvalid), .arready(ac_m_arready), .araddr(ac_m_araddr),
+        .rvalid      (ac_m_rvalid),  .rready (ac_m_rready),
+        .rdata       (ac_m_rdata),   .rresp  (ac_m_rresp),
+        .awvalid     (ac_m_awvalid), .awready(ac_m_awready), .awaddr(ac_m_awaddr),
+        .wvalid      (ac_m_wvalid),  .wready (ac_m_wready),
+        .wdata       (ac_m_wdata),   .wstrb  (ac_m_wstrb),
+        .bvalid      (ac_m_bvalid),  .bready (ac_m_bready)
+    );
 
     axi4_lite_io_manager IO_MGR (
         .io_active (is_uart),
@@ -322,7 +380,7 @@ module top_pipeline #(
         .bvalid    (io_m_bvalid),  .bready (io_m_bready)
     );
 
-    // interconnect: icache→ISRAM, dcache→DSRAM, IO manager→UART
+    // interconnect: icache→ISRAM, dcache→DSRAM, IO manager→UART, accel→systolic
     axi4_lite_interconnect XBAR (
         // M0: icache → S0: ISRAM
         .m0_arvalid(ic_m_arvalid), .m0_arready(ic_m_arready),
@@ -348,6 +406,15 @@ module top_pipeline #(
         .m2_rvalid (io_m_rvalid),  .m2_rready (io_m_rready),
         .m2_rdata  (io_m_rdata),   .m2_rresp  (io_m_rresp),
 
+        // M3: accel manager → S3: systolic array
+        .m3_awvalid(ac_m_awvalid), .m3_awready(ac_m_awready), .m3_awaddr(ac_m_awaddr),
+        .m3_wvalid (ac_m_wvalid),  .m3_wready (ac_m_wready),
+        .m3_wdata  (ac_m_wdata),   .m3_wstrb  (ac_m_wstrb),
+        .m3_bvalid (ac_m_bvalid),  .m3_bready (ac_m_bready),  .m3_bresp (ac_m_bresp),
+        .m3_arvalid(ac_m_arvalid), .m3_arready(ac_m_arready), .m3_araddr(ac_m_araddr),
+        .m3_rvalid (ac_m_rvalid),  .m3_rready (ac_m_rready),
+        .m3_rdata  (ac_m_rdata),   .m3_rresp  (ac_m_rresp),
+
         // S0: ISRAM
         .s0_arvalid(s0_arvalid), .s0_arready(s0_arready), .s0_araddr(s0_araddr),
         .s0_rvalid (s0_rvalid),  .s0_rready (s0_rready),
@@ -369,7 +436,16 @@ module top_pipeline #(
         .s2_bvalid (s2_bvalid),  .s2_bready (s2_bready),  .s2_bresp (s2_bresp),
         .s2_arvalid(s2_arvalid), .s2_arready(s2_arready), .s2_araddr(s2_araddr),
         .s2_rvalid (s2_rvalid),  .s2_rready (s2_rready),
-        .s2_rdata  (s2_rdata),   .s2_rresp  (s2_rresp)
+        .s2_rdata  (s2_rdata),   .s2_rresp  (s2_rresp),
+
+        // S3: systolic array subordinate
+        .s3_awvalid(s3_awvalid), .s3_awready(s3_awready), .s3_awaddr(s3_awaddr),
+        .s3_wvalid (s3_wvalid),  .s3_wready (s3_wready),
+        .s3_wdata  (s3_wdata),   .s3_wstrb  (s3_wstrb),
+        .s3_bvalid (s3_bvalid),  .s3_bready (s3_bready),  .s3_bresp (s3_bresp),
+        .s3_arvalid(s3_arvalid), .s3_arready(s3_arready), .s3_araddr(s3_araddr),
+        .s3_rvalid (s3_rvalid),  .s3_rready (s3_rready),
+        .s3_rdata  (s3_rdata),   .s3_rresp  (s3_rresp)
     );
 
     // ISRAM: read-only instruction SRAM, initialized from HEX_FILE
@@ -421,6 +497,19 @@ module top_pipeline #(
         .uart_irq    (uart_irq)
     );
 
+    // Systolic array accelerator subordinate at 0xFFFE0000
+    systolic_array_sub SYSTOLIC (
+        .clk    (clk),
+        .rst    (rst),
+        .arvalid(s3_arvalid), .arready(s3_arready), .araddr(s3_araddr),
+        .rvalid (s3_rvalid),  .rready (s3_rready),
+        .rdata  (s3_rdata),   .rresp  (s3_rresp),
+        .awvalid(s3_awvalid), .awready(s3_awready), .awaddr(s3_awaddr),
+        .wvalid (s3_wvalid),  .wready (s3_wready),
+        .wdata  (s3_wdata),   .wstrb  (s3_wstrb),
+        .bvalid (s3_bvalid),  .bready (s3_bready),  .bresp (s3_bresp)
+    );
+
     // icache: sits between PC and IF/ID, fills from ISRAM via fabric
     icache ICACHE (
         .clk         (clk),
@@ -439,16 +528,18 @@ module top_pipeline #(
 
     // IF/ID pipeline register
     if_id_reg IF_ID (
-        .clk              (clk),
-        .rst              (rst),
-        .flush            (if_id_flush),
-        .stall            (if_id_stall),
-        .if_pc            (if_pc),
-        .if_instr         (if_instr),
-        .if_predict_taken (bp_predict_taken),
-        .id_pc            (id_pc),
-        .id_instr         (id_instr),
-        .id_predict_taken (id_predict_taken)
+        .clk               (clk),
+        .rst               (rst),
+        .flush             (if_id_flush),
+        .stall             (if_id_stall),
+        .if_pc             (if_pc),
+        .if_instr          (if_instr),
+        .if_predict_taken  (bp_predict_taken),
+        .if_predict_target (bp_predict_target),
+        .id_pc             (id_pc),
+        .id_instr          (id_instr),
+        .id_predict_taken  (id_predict_taken),
+        .id_predict_target (id_predict_target)
     );
 
 
@@ -512,6 +603,7 @@ module top_pipeline #(
 
     register_file RF (
         .clk (clk),
+        .rst (rst),
         .we  (wb_reg_we),
         .rs1 (id_rs1_addr),
         .rs2 (id_rs2_addr),
@@ -576,7 +668,9 @@ module top_pipeline #(
         .id_funct7         (id_funct7),
         .ex_funct7         (ex_funct7),
         .id_predict_taken  (id_predict_taken),
+        .id_predict_target (id_predict_target),
         .ex_predict_taken  (ex_predict_taken),
+        .ex_predict_target (ex_predict_target),
         .id_valid      (id_valid),
         .ex_valid      (ex_valid),
         .stall         (id_ex_stall)
@@ -618,7 +712,19 @@ module top_pipeline #(
         .zero     (ex_alu_zero)
     );
 
-    assign is_simd = (ex_opcode == 7'b0001011);
+    assign is_simd   = (ex_opcode == 7'b0001011);
+    assign is_muldiv = (ex_opcode == 7'b0110011) && (ex_funct7 == 7'b0000001);
+
+    mul_div_unit MULDIV (
+        .clk    (clk),
+        .rst    (rst),
+        .a      (ex_fwd_a),
+        .b      (ex_fwd_b),
+        .funct3 (ex_funct3),
+        .start  (is_muldiv),
+        .result (muldiv_result),
+        .busy   (div_busy)
+    );
 
     simd_alu SIMD (
         .a       (ex_fwd_a),
@@ -632,8 +738,9 @@ module top_pipeline #(
     logic ex_csr_re;
     assign ex_csr_re = (ex_csr_funct3 != 3'b000);
 
-    assign ex_result = is_simd   ? simd_result :
-                       ex_csr_re ? csr_rd      :
+    assign ex_result = is_simd   ? simd_result   :
+                       is_muldiv ? muldiv_result :
+                       ex_csr_re ? csr_rd        :
                                    ex_alu_result;
 
     logic ex_alu_bit0;
@@ -702,12 +809,12 @@ module top_pipeline #(
     // =========================================================
 
     // dcache: fills from DSRAM via AXI4-Lite fabric.
-    // IO addresses (is_io=1) bypass the cache entirely.
+    // IO addresses (is_io=1) and accelerator addresses (is_accel=1) bypass the cache.
     dcache DCACHE (
         .clk         (clk),
         .rst         (rst),
-        .cpu_we      (mem_mem_we && !is_io),
-        .cpu_re      (mem_mem_re && !is_io),
+        .cpu_we      (mem_mem_we && !is_io && !is_accel),
+        .cpu_re      (mem_mem_re && !is_io && !is_accel),
         .cpu_addr    (mem_alu_result),
         .cpu_wd      (mem_rs2_data),
         .cpu_funct3  (mem_funct3),
@@ -724,11 +831,12 @@ module top_pipeline #(
         .is_io       (is_io)
     );
 
-    // Read data mux: PMU takes priority over UART, both bypass the cache
+    // Read data mux: PMU > accel > UART > cache
     logic [31:0] mem_read_data_mux;
-    assign mem_read_data_mux = is_perf ? perf_rd :
-                               is_io   ? io_m_rd :
-                                         cache_rd;
+    assign mem_read_data_mux = is_perf  ? perf_rd  :
+                               is_accel ? accel_rd  :
+                               is_io    ? io_m_rd   :
+                                          cache_rd;
 
     mem_wb_reg MEM_WB (
         .clk            (clk),
@@ -762,15 +870,16 @@ module top_pipeline #(
     // =========================================================
 
     hazard_unit HU (
-        .ex_mem_re        (ex_mem_re),
-        .ex_rd_addr       (ex_rd_addr),
-        .id_rs1_addr      (id_rs1_addr),
-        .id_rs2_addr      (id_rs2_addr),
-        .ex_branch        (ex_branch),
-        .ex_jump          (ex_jump),
-        .branch_taken     (ex_branch_taken),
-        .ex_predict_taken (ex_predict_taken),
+        .ex_mem_re          (ex_mem_re),
+        .ex_rd_addr         (ex_rd_addr),
+        .id_rs1_addr        (id_rs1_addr),
+        .id_rs2_addr        (id_rs2_addr),
+        .ex_branch          (ex_branch),
+        .ex_jump_mispredict (ex_jump_mispredict),
+        .branch_taken       (ex_branch_taken),
+        .ex_predict_taken   (ex_predict_taken),
         .cache_stall      (cache_stall),
+        .div_busy         (div_busy),
         .icache_stall     (icache_stall),
         .pc_stall         (pc_stall),
         .if_id_stall      (if_id_stall),

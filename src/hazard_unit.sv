@@ -15,13 +15,14 @@ module hazard_unit (
     input  logic [4:0] id_rs2_addr,
 
     // branch/jump hazard detection
-    input  logic       ex_branch,       // is EX stage a branch?
-    input  logic       ex_jump,         // is EX stage a jump?
-    input  logic       branch_taken,    // was the branch actually taken?
+    input  logic       ex_branch,          // is EX stage a branch?
+    input  logic       ex_jump_mispredict, // jump whose target was mispredicted
+    input  logic       branch_taken,       // was the branch actually taken?
     input  logic       ex_predict_taken,   // was the branch predicted taken?
 
-    input  logic       cache_stall,     // is there a stall from the memory system?
-    input  logic       icache_stall,    
+    input  logic       cache_stall,     // stall from dcache miss
+    input  logic       div_busy,        // stall from multi-cycle divider
+    input  logic       icache_stall,
 
     // pipeline control outputs
     output logic       pc_stall,        // freeze PC
@@ -40,11 +41,14 @@ module hazard_unit (
 
     logic load_use_hazard;
     logic control_hazard;
+    logic any_stall;          // cache miss or divider running
+
+    assign any_stall = cache_stall || div_busy;
 
     // load-use hazard:
     // EX stage is a load AND its destination matches
     // either source of the instruction currently in ID
-    assign load_use_hazard = ex_mem_re &&
+    assign load_use_hazard = ex_mem_re && (ex_rd_addr != 5'd0) &&
                              (ex_rd_addr == id_rs1_addr ||
                               ex_rd_addr == id_rs2_addr);
 
@@ -52,36 +56,20 @@ module hazard_unit (
     // branch taken or unconditional jump
     // need to flush the two wrongly fetched instructions
     assign branch_mispredict = ex_branch && (branch_taken != ex_predict_taken);
-    assign control_hazard = branch_mispredict || ex_jump || trap || ex_mret;
+    assign control_hazard = branch_mispredict || ex_jump_mispredict || trap || ex_mret;
 
     // pc_stall: release icache stall when a branch/jump correction fires.
     // if_id_flush being high means EX has resolved a misprediction or jump --
     // the PC must take pc_next (the corrected target) immediately.
     // Holding pc_stall high here would trap the PC at the wrong address.
-    assign pc_stall     = load_use_hazard || cache_stall || (icache_stall && !if_id_flush);
+    assign pc_stall     = load_use_hazard || any_stall || (icache_stall && !if_id_flush);
+    assign if_id_stall  = load_use_hazard || any_stall || icache_stall;
+    assign id_ex_stall  = any_stall;
+    assign ex_mem_stall = any_stall;
+    assign mem_wb_stall = any_stall;
 
-    // if_id_stall: hold IF/ID frozen during icache fill.
-    // if_id_flush takes priority in the IF/ID register (flush > stall),
-    // so a simultaneous branch correction still clears the wrong instruction.
-    assign if_id_stall  = load_use_hazard || cache_stall || icache_stall;
-    
-    // During icache miss, only stall IF/ID — let EX/MEM/WB drain naturally.
-    // This prevents the load-drop bug: if a load-use flush (id_ex_flush=1) and
-    // an icache stall (ex_mem_stall=1) fire together, the load is cleared from
-    // EX by the flush but blocked from advancing to MEM by the stall, silently
-    // discarding it. By not stalling EX/MEM/WB during icache fills, the load
-    // advances to MEM normally and commits while IF/ID waits for the fill.
-    assign id_ex_stall  = cache_stall;
-    assign ex_mem_stall = cache_stall;
-    assign mem_wb_stall = cache_stall;
-
-    // flush signals
-    // load-use: flush ID/EX only (insert bubble into EX)
-    // control:  flush IF/ID and ID/EX (remove wrong instructions)
-    // icache:   flush ID/EX each cycle during fill (IF/ID stalls, so ID holds
-    //           the stale instruction — inserting a bubble prevents double-issue)
-    assign id_ex_flush = (load_use_hazard || control_hazard || icache_stall) && !cache_stall;
-    assign if_id_flush = control_hazard && !cache_stall;
+    assign id_ex_flush = (load_use_hazard || control_hazard || icache_stall) && !any_stall;
+    assign if_id_flush = control_hazard && !any_stall;
 
 
 
