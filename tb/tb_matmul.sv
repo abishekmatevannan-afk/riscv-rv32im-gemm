@@ -6,106 +6,97 @@ module tb_matmul;
 
     logic clk_s, rst_s, tx_s;
     logic clk_d, rst_d, tx_d;
+    logic clk_a, rst_a, tx_a;
 
     top_pipeline #(
         .HEX_FILE     ("programs/matmul_scalar.hex"),
         .CLKS_PER_BIT (CLKS_PER_BIT)
     ) scalar_cpu (
-        .clk         (clk_s),
-        .rst         (rst_s),
-        .uart_tx_pin (tx_s),
-        .uart_rx_pin (1'b1)
+        .clk(clk_s), .rst(rst_s), .uart_tx_pin(tx_s), .uart_rx_pin(1'b1)
     );
 
     top_pipeline #(
         .HEX_FILE     ("programs/matmul_simd.hex"),
         .CLKS_PER_BIT (CLKS_PER_BIT)
     ) simd_cpu (
-        .clk         (clk_d),
-        .rst         (rst_d),
-        .uart_tx_pin (tx_d),
-        .uart_rx_pin (1'b1)
+        .clk(clk_d), .rst(rst_d), .uart_tx_pin(tx_d), .uart_rx_pin(1'b1)
+    );
+
+    top_pipeline #(
+        .HEX_FILE     ("programs/matmul_systolic.hex"),
+        .CLKS_PER_BIT (CLKS_PER_BIT)
+    ) systolic_cpu (
+        .clk(clk_a), .rst(rst_a), .uart_tx_pin(tx_a), .uart_rx_pin(1'b1)
     );
 
     initial clk_s = 0; always #5 clk_s = ~clk_s;
     initial clk_d = 0; always #5 clk_d = ~clk_d;
+    initial clk_a = 0; always #5 clk_a = ~clk_a;
 
     initial begin
         $dumpfile("sim/tb_matmul.vcd");
         $dumpvars(0, tb_matmul);
     end
 
-    // PDOT trace: print x16,x17,x20,x21,result every time PDOT fires in EX
+    // PDOT trace
     always @(posedge clk_d) begin
         if (simd_cpu.ex_pc == 32'h00000114 && simd_cpu.ex_valid) begin
             $display("  [PDOT] i=%0d j=%0d a=0x%08h b=0x%08h result=0x%08h",
-                simd_cpu.RF.regs[16],
-                simd_cpu.RF.regs[17],
-                simd_cpu.ex_fwd_a,
-                simd_cpu.ex_fwd_b,
-                simd_cpu.ex_result);
+                simd_cpu.RF.regs[16], simd_cpu.RF.regs[17],
+                simd_cpu.ex_fwd_a, simd_cpu.ex_fwd_b, simd_cpu.ex_result);
         end
     end
 
-    // scalar capture tasks
+    // capture tasks: scalar version
     task automatic cap_byte_s(output logic [7:0] data, output logic ok);
-        integer timeout;
-        timeout = 0; ok = 0; data = 0;
-        while (tx_s == 1 && timeout < 10000000) begin
-            @(posedge clk_s); timeout++;
-        end
-        if (timeout >= 10000000) return;
+        integer t; t=0; ok=0; data=0;
+        while (tx_s==1 && t<10000000) begin @(posedge clk_s); t++; end
+        if (t>=10000000) return;
         repeat(CLKS_PER_BIT/2) @(posedge clk_s);
-        for (int i = 0; i < 8; i++) begin
-            repeat(CLKS_PER_BIT) @(posedge clk_s);
-            data[i] = tx_s;
-        end
-        repeat(CLKS_PER_BIT) @(posedge clk_s);
-        ok = 1;
+        for (int i=0;i<8;i++) begin repeat(CLKS_PER_BIT) @(posedge clk_s); data[i]=tx_s; end
+        repeat(CLKS_PER_BIT) @(posedge clk_s); ok=1;
     endtask
-
     task automatic cap_word_s(output logic [31:0] w, output logic ok);
-        logic [7:0] b; logic b_ok;
-        w = 0; ok = 1;
-        for (int i = 0; i < 4; i++) begin
-            cap_byte_s(b, b_ok);
-            if (!b_ok) begin ok = 0; return; end
-            w |= (32'(b) << (i*8));
-        end
+        logic [7:0] b; logic b_ok; w=0; ok=1;
+        for (int i=0;i<4;i++) begin cap_byte_s(b,b_ok); if (!b_ok) begin ok=0; return; end w|=(32'(b)<<(i*8)); end
     endtask
 
-    // simd capture tasks
+    //capture tasks: simd 
     task automatic cap_byte_d(output logic [7:0] data, output logic ok);
-        integer timeout;
-        timeout = 0; ok = 0; data = 0;
-        while (tx_d == 1 && timeout < 10000000) begin
-            @(posedge clk_d); timeout++;
-        end
-        if (timeout >= 10000000) return;
+        integer t; t=0; ok=0; data=0;
+        while (tx_d==1 && t<10000000) begin @(posedge clk_d); t++; end
+        if (t>=10000000) return;
         repeat(CLKS_PER_BIT/2) @(posedge clk_d);
-        for (int i = 0; i < 8; i++) begin
-            repeat(CLKS_PER_BIT) @(posedge clk_d);
-            data[i] = tx_d;
-        end
-        repeat(CLKS_PER_BIT) @(posedge clk_d);
-        ok = 1;
+        for (int i=0;i<8;i++) begin repeat(CLKS_PER_BIT) @(posedge clk_d); data[i]=tx_d; end
+        repeat(CLKS_PER_BIT) @(posedge clk_d); ok=1;
     endtask
-
     task automatic cap_word_d(output logic [31:0] w, output logic ok);
-        logic [7:0] b; logic b_ok;
-        w = 0; ok = 1;
-        for (int i = 0; i < 4; i++) begin
-            cap_byte_d(b, b_ok);
-            if (!b_ok) begin ok = 0; return; end
-            w |= (32'(b) << (i*8));
-        end
+        logic [7:0] b; logic b_ok; w=0; ok=1;
+        for (int i=0;i<4;i++) begin cap_byte_d(b,b_ok); if (!b_ok) begin ok=0; return; end w|=(32'(b)<<(i*8)); end
     endtask
 
+    // capture tasks: systolic 
+    task automatic cap_byte_a(output logic [7:0] data, output logic ok);
+        integer t; t=0; ok=0; data=0;
+        while (tx_a==1 && t<10000000) begin @(posedge clk_a); t++; end
+        if (t>=10000000) return;
+        repeat(CLKS_PER_BIT/2) @(posedge clk_a);
+        for (int i=0;i<8;i++) begin repeat(CLKS_PER_BIT) @(posedge clk_a); data[i]=tx_a; end
+        repeat(CLKS_PER_BIT) @(posedge clk_a); ok=1;
+    endtask
+    task automatic cap_word_a(output logic [31:0] w, output logic ok);
+        logic [7:0] b; logic b_ok; w=0; ok=1;
+        for (int i=0;i<4;i++) begin cap_byte_a(b,b_ok); if (!b_ok) begin ok=0; return; end w|=(32'(b)<<(i*8)); end
+    endtask
+
+    // results
     logic [31:0] s_cycles, s_instrs, s_branches, s_mispredicts, s_dhits, s_dmisses;
     logic [31:0] d_cycles, d_instrs, d_branches, d_mispredicts, d_dhits, d_dmisses;
-    logic [7:0]  s_c[0:15], d_c[0:15];
-    logic        ok_s, ok_d;
-    real         s_cpi, d_cpi, s_hit_rate, d_hit_rate, speedup;
+    logic [31:0] a_cycles, a_instrs, a_branches, a_mispredicts, a_dhits, a_dmisses;
+    logic [31:0] a_accel_cycles;
+    logic [7:0]  s_c[0:15], d_c[0:15], a_c[0:15];
+    logic        ok_s, ok_d, ok_a;
+    real         s_cpi, d_cpi, s_hit_rate, d_hit_rate;
 
     logic [7:0] expected_c[0:15];
 
@@ -119,108 +110,66 @@ module tb_matmul;
     initial begin
         $display("========== MATRIX MULTIPLY BENCHMARK ==========");
 
-        // ---- SCALAR ----
-        rst_s = 1; rst_d = 1;
+        // ── SCALAR ──
+        rst_s=1; rst_d=1; rst_a=1;
         repeat(5) @(posedge clk_s); #1;
-        rst_s = 0;
+        rst_s=0;
 
         $display("\n--- Scalar (shift-and-add multiply) ---");
-        cap_word_s(s_cycles,      ok_s); if (!ok_s) begin $display("TIMEOUT scalar cycles");      $finish; end
-        cap_word_s(s_instrs,      ok_s); if (!ok_s) begin $display("TIMEOUT scalar instrs");      $finish; end
-        cap_word_s(s_branches,    ok_s); if (!ok_s) begin $display("TIMEOUT scalar branches");    $finish; end
-        cap_word_s(s_mispredicts, ok_s); if (!ok_s) begin $display("TIMEOUT scalar mispredicts"); $finish; end
-        cap_word_s(s_dhits,       ok_s); if (!ok_s) begin $display("TIMEOUT scalar dhits");       $finish; end
-        cap_word_s(s_dmisses,     ok_s); if (!ok_s) begin $display("TIMEOUT scalar dmisses");     $finish; end
+        cap_word_s(s_cycles,ok_s);      if(!ok_s) begin $display("TIMEOUT s_cycles");      $finish; end
+        cap_word_s(s_instrs,ok_s);      if(!ok_s) begin $display("TIMEOUT s_instrs");      $finish; end
+        cap_word_s(s_branches,ok_s);    if(!ok_s) begin $display("TIMEOUT s_branches");    $finish; end
+        cap_word_s(s_mispredicts,ok_s); if(!ok_s) begin $display("TIMEOUT s_mispreds");    $finish; end
+        cap_word_s(s_dhits,ok_s);       if(!ok_s) begin $display("TIMEOUT s_dhits");       $finish; end
+        cap_word_s(s_dmisses,ok_s);     if(!ok_s) begin $display("TIMEOUT s_dmisses");     $finish; end
+        for (int i=0;i<16;i++) begin cap_byte_s(s_c[i],ok_s); if(!ok_s) begin $display("TIMEOUT s_c[%0d]",i); $finish; end end
+        begin integer e; e=0; for(int i=0;i<16;i++) if(s_c[i]!==expected_c[i]) e++; if(e==0) $display("  PASS"); else $display("  FAIL: %0d wrong",e); end
+        s_cpi = real'(s_cycles)/real'(s_instrs);
+        s_hit_rate = 100.0*real'(s_dhits)/real'(s_dhits+s_dmisses>0?s_dhits+s_dmisses:1);
+        $display("  cycles=%0d  instrs=%0d  CPI=%.3f  D$=%.1f%%", s_cycles, s_instrs, s_cpi, s_hit_rate);
 
-        $display("  cycles       = %0d", s_cycles);
-        $display("  instructions = %0d", s_instrs);
-        $display("  branches     = %0d", s_branches);
-        $display("  mispredicts  = %0d", s_mispredicts);
-        $display("  D$ hits      = %0d", s_dhits);
-        $display("  D$ misses    = %0d", s_dmisses);
-
-        for (int i = 0; i < 16; i++) begin
-            cap_byte_s(s_c[i], ok_s);
-            if (!ok_s) begin $display("TIMEOUT scalar C[%0d]", i); $finish; end
-        end
-
-        $display("  C matrix:");
-        for (int r = 0; r < 4; r++) begin
-            $write("    row%0d: [", r);
-            for (int c2 = 0; c2 < 4; c2++) $write(" %0d", s_c[r*4+c2]);
-            $display(" ]");
-        end
-
-        begin
-            integer errs; errs = 0;
-            for (int i = 0; i < 16; i++)
-                if (s_c[i] !== expected_c[i]) errs++;
-            if (errs == 0) $display("  PASS: C = A (correct)");
-            else           $display("  FAIL: %0d elements wrong", errs);
-        end
-
-        s_cpi      = real'(s_cycles) / real'(s_instrs);
-        s_hit_rate = 100.0 * real'(s_dhits) / real'(s_dhits + s_dmisses > 0 ? s_dhits + s_dmisses : 1);
-        $display("  CPI         = %.3f", s_cpi);
-        $display("  D$ hit rate = %.1f%%", s_hit_rate);
-        $display("  branch misp = %.1f%%",
-            100.0 * real'(s_mispredicts) / real'(s_branches > 0 ? s_branches : 1));
-
-        // ---- SIMD ----
-        $display("\n--- SIMD (PDOT packed 4x8-bit dot product) ---");
+        // ── SIMD ──
+        $display("\n--- SIMD (PDOT packed dot product) ---");
         repeat(5) @(posedge clk_d); #1;
-        rst_d = 0;
+        rst_d=0;
+        cap_word_d(d_cycles,ok_d);      if(!ok_d) begin $display("TIMEOUT d_cycles");      $finish; end
+        cap_word_d(d_instrs,ok_d);      if(!ok_d) begin $display("TIMEOUT d_instrs");      $finish; end
+        cap_word_d(d_branches,ok_d);    if(!ok_d) begin $display("TIMEOUT d_branches");    $finish; end
+        cap_word_d(d_mispredicts,ok_d); if(!ok_d) begin $display("TIMEOUT d_mispreds");    $finish; end
+        cap_word_d(d_dhits,ok_d);       if(!ok_d) begin $display("TIMEOUT d_dhits");       $finish; end
+        cap_word_d(d_dmisses,ok_d);     if(!ok_d) begin $display("TIMEOUT d_dmisses");     $finish; end
+        for (int i=0;i<16;i++) begin cap_byte_d(d_c[i],ok_d); if(!ok_d) begin $display("TIMEOUT d_c[%0d]",i); $finish; end end
+        begin integer e; e=0; for(int i=0;i<16;i++) if(d_c[i]!==expected_c[i]) e++; if(e==0) $display("  PASS"); else $display("  FAIL: %0d wrong",e); end
+        d_cpi = real'(d_cycles)/real'(d_instrs);
+        d_hit_rate = 100.0*real'(d_dhits)/real'(d_dhits+d_dmisses>0?d_dhits+d_dmisses:1);
+        $display("  cycles=%0d  instrs=%0d  CPI=%.3f  D$=%.1f%%", d_cycles, d_instrs, d_cpi, d_hit_rate);
 
-        cap_word_d(d_cycles,      ok_d); if (!ok_d) begin $display("TIMEOUT simd cycles");      $finish; end
-        cap_word_d(d_instrs,      ok_d); if (!ok_d) begin $display("TIMEOUT simd instrs");      $finish; end
-        cap_word_d(d_branches,    ok_d); if (!ok_d) begin $display("TIMEOUT simd branches");    $finish; end
-        cap_word_d(d_mispredicts, ok_d); if (!ok_d) begin $display("TIMEOUT simd mispredicts"); $finish; end
-        cap_word_d(d_dhits,       ok_d); if (!ok_d) begin $display("TIMEOUT simd dhits");       $finish; end
-        cap_word_d(d_dmisses,     ok_d); if (!ok_d) begin $display("TIMEOUT simd dmisses");     $finish; end
+        // ── SYSTOLIC ──
+        $display("\n--- Systolic Array (4x4 PE grid, 4-cycle compute) ---");
+        repeat(5) @(posedge clk_a); #1;
+        rst_a=0;
+        cap_word_a(a_cycles,ok_a);       if(!ok_a) begin $display("TIMEOUT a_cycles");      $finish; end
+        cap_word_a(a_instrs,ok_a);       if(!ok_a) begin $display("TIMEOUT a_instrs");      $finish; end
+        cap_word_a(a_branches,ok_a);     if(!ok_a) begin $display("TIMEOUT a_branches");    $finish; end
+        cap_word_a(a_mispredicts,ok_a);  if(!ok_a) begin $display("TIMEOUT a_mispreds");    $finish; end
+        cap_word_a(a_dhits,ok_a);        if(!ok_a) begin $display("TIMEOUT a_dhits");       $finish; end
+        cap_word_a(a_dmisses,ok_a);      if(!ok_a) begin $display("TIMEOUT a_dmisses");     $finish; end
+        cap_word_a(a_accel_cycles,ok_a); if(!ok_a) begin $display("TIMEOUT a_accel");       $finish; end
+        for (int i=0;i<16;i++) begin cap_byte_a(a_c[i],ok_a); if(!ok_a) begin $display("TIMEOUT a_c[%0d]",i); $finish; end end
+        begin integer e; e=0; for(int i=0;i<16;i++) if(a_c[i]!==expected_c[i]) e++; if(e==0) $display("  PASS"); else $display("  FAIL: %0d wrong",e); end
+        $display("  CPU cycles=%0d  instrs=%0d  accel_cycles=%0d", a_cycles, a_instrs, a_accel_cycles);
 
-        $display("  cycles       = %0d", d_cycles);
-        $display("  instructions = %0d", d_instrs);
-        $display("  branches     = %0d", d_branches);
-        $display("  mispredicts  = %0d", d_mispredicts);
-        $display("  D$ hits      = %0d", d_dhits);
-        $display("  D$ misses    = %0d", d_dmisses);
-
-        for (int i = 0; i < 16; i++) begin
-            cap_byte_d(d_c[i], ok_d);
-            if (!ok_d) begin $display("TIMEOUT simd C[%0d]", i); $finish; end
-        end
-
-        $display("  C matrix:");
-        for (int r = 0; r < 4; r++) begin
-            $write("    row%0d: [", r);
-            for (int c2 = 0; c2 < 4; c2++) $write(" %0d", d_c[r*4+c2]);
-            $display(" ]");
-        end
-
-        begin
-            integer errs; errs = 0;
-            for (int i = 0; i < 16; i++)
-                if (d_c[i] !== expected_c[i]) errs++;
-            if (errs == 0) $display("  PASS: C = A (correct)");
-            else           $display("  FAIL: %0d elements wrong", errs);
-        end
-
-        d_cpi      = real'(d_cycles) / real'(d_instrs);
-        d_hit_rate = 100.0 * real'(d_dhits) / real'(d_dhits + d_dmisses > 0 ? d_dhits + d_dmisses : 1);
-        speedup    = real'(s_cycles) / real'(d_cycles);
-
-        $display("  CPI         = %.3f", d_cpi);
-        $display("  D$ hit rate = %.1f%%", d_hit_rate);
-        $display("  branch misp = %.1f%%",
-            100.0 * real'(d_mispredicts) / real'(d_branches > 0 ? d_branches : 1));
-
+        // ── SUMMARY ──
         $display("\n========== SUMMARY ==========");
-        $display("  Scalar:  %0d cycles  %0d instrs  CPI=%.3f",
-            s_cycles, s_instrs, s_cpi);
-        $display("  SIMD:    %0d cycles  %0d instrs  CPI=%.3f",
-            d_cycles, d_instrs, d_cpi);
-        $display("  Speedup: %.2fx", speedup);
-        $display("  D$ hit rate (both): %.1f%%", s_hit_rate);
+        $display("  %-12s  %6s  %6s  %6s  %8s", "Version", "Cycles", "Instrs", "CPI", "Speedup");
+        $display("  %-12s  %6d  %6d  %5.3f  %8s", "Scalar",   s_cycles, s_instrs, s_cpi, "1.00x");
+        $display("  %-12s  %6d  %6d  %5.3f  %7.2fx",
+            "SIMD", d_cycles, d_instrs, d_cpi, real'(s_cycles)/real'(d_cycles));
+        $display("  %-12s  %6d  %6d  %5s  %7.2fx  (accel: %0d cycles)",
+            "Systolic", a_cycles, a_instrs, "--",
+            real'(s_cycles)/real'(a_cycles), a_accel_cycles);
+        $display("  Scalar -> Systolic speedup (compute only): %.0fx",
+            real'(s_cycles)/real'(a_accel_cycles));
         $display("========== DONE ==========");
         $finish;
     end
