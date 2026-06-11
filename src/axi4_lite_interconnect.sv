@@ -1,11 +1,12 @@
-// AXI4-Lite interconnect: 4 managers, 4 subordinates
+// AXI4-Lite interconnect: 5 managers, 5 subordinates
 // Harvard architecture: each manager has a dedicated subordinate.
 // No arbitration needed — no two managers share a subordinate.
 //
-// Manager 0 (icache):        read-only  → Subordinate 0 (ISRAM)
-// Manager 1 (dcache):        read/write → Subordinate 1 (DSRAM)
-// Manager 2 (IO manager):    read/write → Subordinate 2 (UART)
-// Manager 3 (accel manager): read/write → Subordinate 3 (Systolic array)
+// Manager 0 (icache):           read-only  → Subordinate 0 (ISRAM)
+// Manager 1 (dcache):           read/write → Subordinate 1 (DSRAM)
+// Manager 2 (IO manager):       read/write → Subordinate 2 (UART)
+// Manager 3 (accel manager):    read/write → Subordinate 3 (Parallel MAC, 0xFFFE....)
+// Manager 4 (systolic manager): read/write → Subordinate 4 (Systolic array, 0xFFFD....)
 
 module axi4_lite_interconnect (
 
@@ -81,7 +82,19 @@ module axi4_lite_interconnect (
     input  logic        s2_rvalid,  output logic        s2_rready,
     input  logic [31:0] s2_rdata,   input  logic [1:0]  s2_rresp,
 
-    // ── Subordinate 3: Systolic array (read/write) ───────────────────────
+    // ── Manager 4: systolic manager (read/write) ─────────────────────────
+    input  logic        m4_awvalid, output logic        m4_awready,
+    input  logic [31:0] m4_awaddr,
+    input  logic        m4_wvalid,  output logic        m4_wready,
+    input  logic [31:0] m4_wdata,   input  logic [3:0]  m4_wstrb,
+    output logic        m4_bvalid,  input  logic        m4_bready,
+    output logic [1:0]  m4_bresp,
+    input  logic        m4_arvalid, output logic        m4_arready,
+    input  logic [31:0] m4_araddr,
+    output logic        m4_rvalid,  input  logic        m4_rready,
+    output logic [31:0] m4_rdata,   output logic [1:0]  m4_rresp,
+
+    // ── Subordinate 3: Parallel MAC (read/write) ─────────────────────────
     output logic        s3_awvalid, input  logic        s3_awready,
     output logic [31:0] s3_awaddr,
     output logic        s3_wvalid,  input  logic        s3_wready,
@@ -91,7 +104,19 @@ module axi4_lite_interconnect (
     output logic        s3_arvalid, input  logic        s3_arready,
     output logic [31:0] s3_araddr,
     input  logic        s3_rvalid,  output logic        s3_rready,
-    input  logic [31:0] s3_rdata,   input  logic [1:0]  s3_rresp
+    input  logic [31:0] s3_rdata,   input  logic [1:0]  s3_rresp,
+
+    // ── Subordinate 4: Systolic array (read/write) ───────────────────────
+    output logic        s4_awvalid, input  logic        s4_awready,
+    output logic [31:0] s4_awaddr,
+    output logic        s4_wvalid,  input  logic        s4_wready,
+    output logic [31:0] s4_wdata,   output logic [3:0]  s4_wstrb,
+    input  logic        s4_bvalid,  output logic        s4_bready,
+    input  logic [1:0]  s4_bresp,
+    output logic        s4_arvalid, input  logic        s4_arready,
+    output logic [31:0] s4_araddr,
+    input  logic        s4_rvalid,  output logic        s4_rready,
+    input  logic [31:0] s4_rdata,   input  logic [1:0]  s4_rresp
 );
 
     // M0 → S0
@@ -121,5 +146,13 @@ module axi4_lite_interconnect (
     assign m3_awready=s3_awready; assign m3_wready=s3_wready; assign m3_bvalid=s3_bvalid;
     assign m3_bresp=s3_bresp; assign m3_arready=s3_arready; assign m3_rvalid=s3_rvalid;
     assign m3_rdata=s3_rdata; assign m3_rresp=s3_rresp;
+
+    // M4 → S4
+    assign s4_awvalid=m4_awvalid; assign s4_awaddr=m4_awaddr; assign s4_wvalid=m4_wvalid;
+    assign s4_wdata=m4_wdata; assign s4_wstrb=m4_wstrb; assign s4_bready=m4_bready;
+    assign s4_arvalid=m4_arvalid; assign s4_araddr=m4_araddr; assign s4_rready=m4_rready;
+    assign m4_awready=s4_awready; assign m4_wready=s4_wready; assign m4_bvalid=s4_bvalid;
+    assign m4_bresp=s4_bresp; assign m4_arready=s4_arready; assign m4_rvalid=s4_rvalid;
+    assign m4_rdata=s4_rdata; assign m4_rresp=s4_rresp;
 
 endmodule

@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
-// Standalone unit test for systolic_array_sub.
+// Standalone unit test for systolic_array_sub (genuine output-stationary).
 // Writes a 4x4 identity matrix multiply (A * I = A) via AXI4-Lite,
-// polls done, reads C, verifies C == A.
+// polls done, reads C, verifies C == A and compute cycles == 11.
 
 module tb_systolic_array;
 
@@ -55,7 +55,7 @@ module tb_systolic_array;
     integer      errs;
 
     initial begin
-        $display("========== SYSTOLIC ARRAY UNIT TEST ==========");
+        $display("========== SYSTOLIC ARRAY UNIT TEST (output-stationary) ==========");
 
         // A = [[1,2,3,4],[5,6,7,8],[1,2,3,4],[5,6,7,8]]
         // B = I (identity, stored as B-transposed rows)
@@ -66,48 +66,49 @@ module tb_systolic_array;
         rst = 0;
 
         // Write A rows (packed {byte3,byte2,byte1,byte0})
-        axi_write(32'hFFFE0010, 32'h04030201);  // A_ROW0 [4,3,2,1]
-        axi_write(32'hFFFE0014, 32'h08070605);  // A_ROW1 [8,7,6,5]
-        axi_write(32'hFFFE0018, 32'h04030201);  // A_ROW2
-        axi_write(32'hFFFE001C, 32'h08070605);  // A_ROW3
+        axi_write(32'hFFFD0010, 32'h04030201);  // A_ROW0 [4,3,2,1]
+        axi_write(32'hFFFD0014, 32'h08070605);  // A_ROW1 [8,7,6,5]
+        axi_write(32'hFFFD0018, 32'h04030201);  // A_ROW2
+        axi_write(32'hFFFD001C, 32'h08070605);  // A_ROW3
 
-        // Write B rows (B transposed, identity → same as B)
-        axi_write(32'hFFFE0020, 32'h00000001);  // B_ROW0 [0,0,0,1]
-        axi_write(32'hFFFE0024, 32'h00000100);  // B_ROW1
-        axi_write(32'hFFFE0028, 32'h00010000);  // B_ROW2
-        axi_write(32'hFFFE002C, 32'h01000000);  // B_ROW3
+        // Write B rows (B transposed, identity)
+        axi_write(32'hFFFD0020, 32'h00000001);  // B_ROW0 col0: [0,0,0,1]
+        axi_write(32'hFFFD0024, 32'h00000100);  // B_ROW1 col1
+        axi_write(32'hFFFD0028, 32'h00010000);  // B_ROW2 col2
+        axi_write(32'hFFFD002C, 32'h01000000);  // B_ROW3 col3
 
         // Start
-        axi_write(32'hFFFE0000, 32'h00000001);  // CTRL = 1
+        axi_write(32'hFFFD0000, 32'h00000001);  // CTRL = 1
 
-        // Poll STATUS until done
-        repeat(10) begin
-            axi_read(32'hFFFE0004, rd);
+        // Poll STATUS — systolic needs 11 compute cycles; poll up to 20 times
+        rd = 0;
+        repeat(20) begin
+            axi_read(32'hFFFD0004, rd);
             if (rd[0]) disable fork;
             @(posedge clk); #1;
         end
-        axi_read(32'hFFFE0004, rd);
+        axi_read(32'hFFFD0004, rd);
         if (!rd[0]) begin
             $display("FAIL: done never went high");
             $finish;
         end
 
-        // Read cycle count
-        axi_read(32'hFFFE0008, rd);
+        // Read and check cycle count (expect 11)
+        axi_read(32'hFFFD0008, rd);
         $display("  Accelerator compute cycles = %0d", rd);
-        if (rd == 4)
-            $display("PASS: compute cycles = 4 (one per k)");
+        if (rd == 11)
+            $display("PASS: compute cycles = 11 (wavefront: i+j+1+k, last PE at t=10)");
         else
-            $display("FAIL: expected 4 compute cycles, got %0d", rd);
+            $display("FAIL: expected 11 compute cycles, got %0d", rd);
 
         // Read C rows
-        axi_read(32'hFFFE0040, rd);
+        axi_read(32'hFFFD0040, rd);
         c[0]=rd[7:0]; c[1]=rd[15:8]; c[2]=rd[23:16]; c[3]=rd[31:24];
-        axi_read(32'hFFFE0044, rd);
+        axi_read(32'hFFFD0044, rd);
         c[4]=rd[7:0]; c[5]=rd[15:8]; c[6]=rd[23:16]; c[7]=rd[31:24];
-        axi_read(32'hFFFE0048, rd);
+        axi_read(32'hFFFD0048, rd);
         c[8]=rd[7:0]; c[9]=rd[15:8]; c[10]=rd[23:16]; c[11]=rd[31:24];
-        axi_read(32'hFFFE004C, rd);
+        axi_read(32'hFFFD004C, rd);
         c[12]=rd[7:0]; c[13]=rd[15:8]; c[14]=rd[23:16]; c[15]=rd[31:24];
 
         $display("  C matrix:");

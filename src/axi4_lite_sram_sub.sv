@@ -48,28 +48,14 @@ module axi4_lite_sram_sub #(
 
     logic [31:0] mem [0:DEPTH_WORDS-1];
 
-    // initialization: zero first, then load hex if provided
+    // Memory initialization: $readmemh is synthesizable for Xilinx BRAM init.
+    // Zero-init is the default for uninitialized BRAM entries.
     integer fi;
-    integer fd, lc;
-    string  ln;
     initial begin
         for (fi = 0; fi < DEPTH_WORDS; fi++)
             mem[fi] = 32'd0;
-        if (HEX_FILE != "") begin
-            // count lines to avoid $readmemh overflow warnings
-            lc = 0;
-            fd = $fopen(HEX_FILE, "r");
-            if (fd != 0) begin
-                while (!$feof(fd)) begin
-                    ln = "";
-                    if ($fgets(ln, fd) && ln.len() > 0)
-                        lc = lc + 1;
-                end
-                $fclose(fd);
-                if (lc > 0)
-                    $readmemh(HEX_FILE, mem, 0, lc - 1);
-            end
-        end
+        if (HEX_FILE != "")
+            $readmemh(HEX_FILE, mem);
     end
 
     // Read: always ready, combinational response

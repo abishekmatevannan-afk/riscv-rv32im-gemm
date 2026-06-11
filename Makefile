@@ -12,7 +12,10 @@ $(shell mkdir -p $(SIM_DIR))
 INTEGRATION = top top_pipeline uart_integration uart_mem_map \
               exception_test axi4_lite matmul \
               exception_handler_stack \
-              uart_integration_debug
+              uart_integration_debug \
+              perf_demo \
+              parallel_mac systolic_array \
+              mul_div
 
 
 # make sim MODULE=<name>
@@ -82,7 +85,7 @@ test-all:
 			pass=$$((pass + 1)); \
 		fi; \
 	done; \
-	echo "--------------------------------------------------------"; \
+	echo "========================================================"; \
 	echo "  $$pass passed   $$fail failed"; \
 	echo "========================================================"; \
 	test $$fail -eq 0

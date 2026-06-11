@@ -79,6 +79,7 @@ module top #(
 
     register_file RF (
         .clk (clk),
+        .rst (rst),
         .we  (reg_we),
         .rs1 (rs1_addr),
         .rs2 (rs2_addr),

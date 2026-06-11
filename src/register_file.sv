@@ -4,6 +4,7 @@
 
 module register_file (
     input  logic        clk,
+    input  logic        rst,
     input  logic        we,          // write enable
     input  logic [4:0]  rs1,         // read address 1
     input  logic [4:0]  rs2,         // read address 2
@@ -13,27 +14,21 @@ module register_file (
     output logic [31:0] rd2          // read data 2
 );
 
-    // 32 registers each 32 bits wide
     logic [31:0] regs [31:0];
 
-    // initialize all registers to zero at start
     integer i;
-    initial begin
-        for (i = 0; i < 32; i++) begin
-            regs[i] = 32'd0;
-        end
-    end
 
-    // synchronous write
-    // x0 write is ignored (hardwired zero)
+    // synchronous write; x0 write is ignored (hardwired zero)
     always_ff @(posedge clk) begin
-        if (we && rd != 5'd0) begin
+        if (rst) begin
+            for (i = 0; i < 32; i++)
+                regs[i] <= 32'd0;
+        end else if (we && rd != 5'd0) begin
             regs[rd] <= wd;
         end
     end
 
-    // asynchronous read
-    // x0 always returns zero regardless of content
+    // asynchronous read; x0 always returns zero
     assign rd1 = (rs1 == 5'd0) ? 32'd0 : regs[rs1];
     assign rd2 = (rs2 == 5'd0) ? 32'd0 : regs[rs2];
 

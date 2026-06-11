@@ -1,9 +1,9 @@
 // Direct-mapped write-back write-allocate L1 Data Cache
-// 256 bytes total, 16 lines, 16 bytes per line (4 words)
+// 4096 bytes total, 256 lines, 16 bytes per line (4 words)
 //
 // Address breakdown [31:0]:
-//   Tag    [31:8]  24 bits
-//   Index  [7:4]    4 bits  (selects 1 of 16 lines)
+//   Tag    [31:12] 20 bits
+//   Index  [11:4]   8 bits  (selects 1 of 256 lines)
 //   Offset [3:0]    4 bits  (byte within line)
  
 module dcache (
@@ -93,15 +93,7 @@ module dcache (
     // one cycle wait for memory to respond
     logic fill_wait;
  
-    // initialize cache
     integer i;
-    initial begin
-        for (i = 0; i < NUM_LINES; i++) begin
-            valid[i] = 0;
-            dirty[i] = 0;
-            tags[i]  = 0;
-        end
-    end
  
     // =========================================================
     // INTERMEDIATE READ DATA SIGNALS
@@ -188,6 +180,7 @@ module dcache (
             for (i = 0; i < NUM_LINES; i++) begin
                 valid[i] <= 0;
                 dirty[i] <= 0;
+                tags[i]  <= '0;
             end
         end else begin
             mem_we <= 0;

@@ -62,12 +62,6 @@ module icache (
     logic        fill_wait;
 
     integer i;
-    initial begin
-        for (i = 0; i < NUM_LINES; i++) begin
-            valid[i] = 0;
-            tags[i]  = 0;
-        end
-    end
 
     // instruction read mux
     // DONE state: line just filled, data is valid for cpu_addr
@@ -83,9 +77,19 @@ module icache (
     assign icache_stall = cpu_re && !hit && (state != DONE);
 
     always_ff @(posedge clk) begin
-        if (rst || flush) begin
-            // flush on branch correction: abandon partial fill
-            // valid is NOT set so the partial line is invisible on next access
+        if (rst) begin
+            state        <= IDLE;
+            fill_wait    <= 0;
+            fill_word    <= 0;
+            mem_re       <= 0;
+            mem_addr     <= 32'd0;
+            request_miss <= 0;
+            for (i = 0; i < NUM_LINES; i++) begin
+                valid[i] <= 0;
+                tags[i]  <= '0;
+            end
+        end else if (flush) begin
+            // branch correction: abandon partial fill, preserve cached lines
             state        <= IDLE;
             fill_wait    <= 0;
             fill_word    <= 0;

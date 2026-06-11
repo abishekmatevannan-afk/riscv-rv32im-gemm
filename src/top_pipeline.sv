@@ -256,7 +256,7 @@ module top_pipeline #(
     logic [31:0] ac_m_rdata;
     logic [1:0]  ac_m_rresp;
 
-    // interconnect → systolic array subordinate (s3, read/write)
+    // interconnect → parallel MAC subordinate (s3, 0xFFFE, read/write)
     logic        s3_awvalid, s3_awready;
     logic [31:0] s3_awaddr;
     logic        s3_wvalid,  s3_wready;
@@ -269,6 +269,37 @@ module top_pipeline #(
     logic        s3_rvalid,  s3_rready;
     logic [31:0] s3_rdata;
     logic [1:0]  s3_rresp;
+
+    // systolic manager → interconnect (AW/W/B/AR/R)
+    logic        sy_m_awvalid, sy_m_awready;
+    logic [31:0] sy_m_awaddr;
+    logic        sy_m_wvalid,  sy_m_wready;
+    logic [31:0] sy_m_wdata;
+    logic [3:0]  sy_m_wstrb;
+    logic        sy_m_bvalid,  sy_m_bready;
+    logic [1:0]  sy_m_bresp;
+    logic        sy_m_arvalid, sy_m_arready;
+    logic [31:0] sy_m_araddr;
+    logic        sy_m_rvalid,  sy_m_rready;
+    logic [31:0] sy_m_rdata;
+    logic [1:0]  sy_m_rresp;
+
+    // interconnect → systolic array subordinate (s4, 0xFFFD, read/write)
+    logic        s4_awvalid, s4_awready;
+    logic [31:0] s4_awaddr;
+    logic        s4_wvalid,  s4_wready;
+    logic [31:0] s4_wdata;
+    logic [3:0]  s4_wstrb;
+    logic        s4_bvalid,  s4_bready;
+    logic [1:0]  s4_bresp;
+    logic        s4_arvalid, s4_arready;
+    logic [31:0] s4_araddr;
+    logic        s4_rvalid,  s4_rready;
+    logic [31:0] s4_rdata;
+    logic [1:0]  s4_rresp;
+
+    logic [31:0] systolic_m_rd;
+    logic        is_systolic;
 
     // dcache → dcache manager intermediate wires
     // (replaces old dmem_* wires that went directly to data_memory)
@@ -346,7 +377,8 @@ module top_pipeline #(
     // Purely combinational — UART sub responds same cycle (rvalid=arvalid),
     // so the pipeline timing is identical to the old direct connection.
     assign is_uart  = is_io && !is_perf;
-    assign is_accel = (mem_alu_result[31:16] == 16'hFFFE);
+    assign is_accel    = (mem_alu_result[31:16] == 16'hFFFE);
+    assign is_systolic = (mem_alu_result[31:16] == 16'hFFFD);
 
     axi4_lite_accel_manager ACCEL_MGR (
         .accel_active(is_accel),
@@ -362,6 +394,22 @@ module top_pipeline #(
         .wvalid      (ac_m_wvalid),  .wready (ac_m_wready),
         .wdata       (ac_m_wdata),   .wstrb  (ac_m_wstrb),
         .bvalid      (ac_m_bvalid),  .bready (ac_m_bready)
+    );
+
+    axi4_lite_accel_manager SYSTOLIC_MGR (
+        .accel_active(is_systolic),
+        .mem_re      (mem_mem_re),
+        .mem_we      (mem_mem_we),
+        .mem_addr    (mem_alu_result),
+        .mem_wdata   (mem_rs2_data),
+        .accel_rd    (systolic_m_rd),
+        .arvalid     (sy_m_arvalid), .arready(sy_m_arready), .araddr(sy_m_araddr),
+        .rvalid      (sy_m_rvalid),  .rready (sy_m_rready),
+        .rdata       (sy_m_rdata),   .rresp  (sy_m_rresp),
+        .awvalid     (sy_m_awvalid), .awready(sy_m_awready), .awaddr(sy_m_awaddr),
+        .wvalid      (sy_m_wvalid),  .wready (sy_m_wready),
+        .wdata       (sy_m_wdata),   .wstrb  (sy_m_wstrb),
+        .bvalid      (sy_m_bvalid),  .bready (sy_m_bready)
     );
 
     axi4_lite_io_manager IO_MGR (
@@ -406,7 +454,7 @@ module top_pipeline #(
         .m2_rvalid (io_m_rvalid),  .m2_rready (io_m_rready),
         .m2_rdata  (io_m_rdata),   .m2_rresp  (io_m_rresp),
 
-        // M3: accel manager → S3: systolic array
+        // M3: accel manager → S3: parallel MAC
         .m3_awvalid(ac_m_awvalid), .m3_awready(ac_m_awready), .m3_awaddr(ac_m_awaddr),
         .m3_wvalid (ac_m_wvalid),  .m3_wready (ac_m_wready),
         .m3_wdata  (ac_m_wdata),   .m3_wstrb  (ac_m_wstrb),
@@ -414,6 +462,15 @@ module top_pipeline #(
         .m3_arvalid(ac_m_arvalid), .m3_arready(ac_m_arready), .m3_araddr(ac_m_araddr),
         .m3_rvalid (ac_m_rvalid),  .m3_rready (ac_m_rready),
         .m3_rdata  (ac_m_rdata),   .m3_rresp  (ac_m_rresp),
+
+        // M4: systolic manager → S4: systolic array
+        .m4_awvalid(sy_m_awvalid), .m4_awready(sy_m_awready), .m4_awaddr(sy_m_awaddr),
+        .m4_wvalid (sy_m_wvalid),  .m4_wready (sy_m_wready),
+        .m4_wdata  (sy_m_wdata),   .m4_wstrb  (sy_m_wstrb),
+        .m4_bvalid (sy_m_bvalid),  .m4_bready (sy_m_bready),  .m4_bresp (sy_m_bresp),
+        .m4_arvalid(sy_m_arvalid), .m4_arready(sy_m_arready), .m4_araddr(sy_m_araddr),
+        .m4_rvalid (sy_m_rvalid),  .m4_rready (sy_m_rready),
+        .m4_rdata  (sy_m_rdata),   .m4_rresp  (sy_m_rresp),
 
         // S0: ISRAM
         .s0_arvalid(s0_arvalid), .s0_arready(s0_arready), .s0_araddr(s0_araddr),
@@ -438,14 +495,23 @@ module top_pipeline #(
         .s2_rvalid (s2_rvalid),  .s2_rready (s2_rready),
         .s2_rdata  (s2_rdata),   .s2_rresp  (s2_rresp),
 
-        // S3: systolic array subordinate
+        // S3: parallel MAC subordinate
         .s3_awvalid(s3_awvalid), .s3_awready(s3_awready), .s3_awaddr(s3_awaddr),
         .s3_wvalid (s3_wvalid),  .s3_wready (s3_wready),
         .s3_wdata  (s3_wdata),   .s3_wstrb  (s3_wstrb),
         .s3_bvalid (s3_bvalid),  .s3_bready (s3_bready),  .s3_bresp (s3_bresp),
         .s3_arvalid(s3_arvalid), .s3_arready(s3_arready), .s3_araddr(s3_araddr),
         .s3_rvalid (s3_rvalid),  .s3_rready (s3_rready),
-        .s3_rdata  (s3_rdata),   .s3_rresp  (s3_rresp)
+        .s3_rdata  (s3_rdata),   .s3_rresp  (s3_rresp),
+
+        // S4: genuine systolic array subordinate
+        .s4_awvalid(s4_awvalid), .s4_awready(s4_awready), .s4_awaddr(s4_awaddr),
+        .s4_wvalid (s4_wvalid),  .s4_wready (s4_wready),
+        .s4_wdata  (s4_wdata),   .s4_wstrb  (s4_wstrb),
+        .s4_bvalid (s4_bvalid),  .s4_bready (s4_bready),  .s4_bresp (s4_bresp),
+        .s4_arvalid(s4_arvalid), .s4_arready(s4_arready), .s4_araddr(s4_araddr),
+        .s4_rvalid (s4_rvalid),  .s4_rready (s4_rready),
+        .s4_rdata  (s4_rdata),   .s4_rresp  (s4_rresp)
     );
 
     // ISRAM: read-only instruction SRAM, initialized from HEX_FILE
@@ -497,8 +563,8 @@ module top_pipeline #(
         .uart_irq    (uart_irq)
     );
 
-    // Systolic array accelerator subordinate at 0xFFFE0000
-    systolic_array_sub SYSTOLIC (
+    // Parallel MAC accelerator subordinate at 0xFFFE0000
+    parallel_mac_sub ACCEL_SUB (
         .clk    (clk),
         .rst    (rst),
         .arvalid(s3_arvalid), .arready(s3_arready), .araddr(s3_araddr),
@@ -508,6 +574,19 @@ module top_pipeline #(
         .wvalid (s3_wvalid),  .wready (s3_wready),
         .wdata  (s3_wdata),   .wstrb  (s3_wstrb),
         .bvalid (s3_bvalid),  .bready (s3_bready),  .bresp (s3_bresp)
+    );
+
+    // Genuine output-stationary systolic array at 0xFFFD0000
+    systolic_array_sub SYSTOLIC_SUB (
+        .clk    (clk),
+        .rst    (rst),
+        .arvalid(s4_arvalid), .arready(s4_arready), .araddr(s4_araddr),
+        .rvalid (s4_rvalid),  .rready (s4_rready),
+        .rdata  (s4_rdata),   .rresp  (s4_rresp),
+        .awvalid(s4_awvalid), .awready(s4_awready), .awaddr(s4_awaddr),
+        .wvalid (s4_wvalid),  .wready (s4_wready),
+        .wdata  (s4_wdata),   .wstrb  (s4_wstrb),
+        .bvalid (s4_bvalid),  .bready (s4_bready),  .bresp (s4_bresp)
     );
 
     // icache: sits between PC and IF/ID, fills from ISRAM via fabric
@@ -813,8 +892,8 @@ module top_pipeline #(
     dcache DCACHE (
         .clk         (clk),
         .rst         (rst),
-        .cpu_we      (mem_mem_we && !is_io && !is_accel),
-        .cpu_re      (mem_mem_re && !is_io && !is_accel),
+        .cpu_we      (mem_mem_we && !is_io && !is_accel && !is_systolic),
+        .cpu_re      (mem_mem_re && !is_io && !is_accel && !is_systolic),
         .cpu_addr    (mem_alu_result),
         .cpu_wd      (mem_rs2_data),
         .cpu_funct3  (mem_funct3),
@@ -831,12 +910,13 @@ module top_pipeline #(
         .is_io       (is_io)
     );
 
-    // Read data mux: PMU > accel > UART > cache
+    // Read data mux: PMU > parallel MAC > systolic > UART > cache
     logic [31:0] mem_read_data_mux;
-    assign mem_read_data_mux = is_perf  ? perf_rd  :
-                               is_accel ? accel_rd  :
-                               is_io    ? io_m_rd   :
-                                          cache_rd;
+    assign mem_read_data_mux = is_perf     ? perf_rd      :
+                               is_accel    ? accel_rd      :
+                               is_systolic ? systolic_m_rd :
+                               is_io       ? io_m_rd       :
+                                             cache_rd;
 
     mem_wb_reg MEM_WB (
         .clk            (clk),

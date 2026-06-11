@@ -5,6 +5,7 @@ module tb_perf_counters;
     logic        clk, rst, re;
     logic [31:0] addr, rd;
     logic        instr_retired, branch_exec, mispredict;
+    logic        cache_hit, cache_miss, icache_hit, icache_miss;
 
     perf_counters dut (
         .clk           (clk),
@@ -14,7 +15,11 @@ module tb_perf_counters;
         .rd            (rd),
         .instr_retired (instr_retired),
         .branch_exec   (branch_exec),
-        .mispredict    (mispredict)
+        .mispredict    (mispredict),
+        .cache_hit     (cache_hit),
+        .cache_miss    (cache_miss),
+        .icache_hit    (icache_hit),
+        .icache_miss   (icache_miss)
     );
 
     initial begin
@@ -25,91 +30,89 @@ module tb_perf_counters;
     initial clk = 0;
     always #5 clk = ~clk;
 
-    task automatic read_counter(
-        input  [31:0] a,
-        output [31:0] val,
-        input  string name
-    );
+    task automatic check(input [31:0] a, input [31:0] expected,
+                         input string name, input string op);
+        logic [31:0] val;
         re = 1; addr = a; #10;
-        val = rd;
-        re = 0;
-        $display("%s = %0d", name, val);
+        val = rd; re = 0;
+        if (op == "==" && val == expected)
+            $display("PASS: %-20s = %0d", name, val);
+        else if (op == ">=" && val >= expected)
+            $display("PASS: %-20s = %0d (>= %0d)", name, val, expected);
+        else
+            $display("FAIL: %-20s = %0d (expected %s %0d)", name, val, op, expected);
     endtask
 
-    logic [31:0] cycles, instrs, branches, mispredicts;
+    logic [31:0] cycles;
 
     initial begin
         $display("========== PERF COUNTERS TESTBENCH ==========");
 
         rst = 1; re = 0;
-        instr_retired = 0;
-        branch_exec   = 0;
-        mispredict    = 0;
+        instr_retired = 0; branch_exec = 0; mispredict = 0;
+        cache_hit = 0; cache_miss = 0; icache_hit = 0; icache_miss = 0;
         repeat(3) @(posedge clk); #1;
         rst = 0;
 
-        // run 10 cycles
+        // --- cycle counter ---
         repeat(10) @(posedge clk); #1;
+        check(32'hFFFF2000, 10, "cycles", ">=");
 
-        // read cycle counter
-        read_counter(32'hFFFF2000, cycles, "cycles");
-        if (cycles >= 10)
-            $display("PASS: cycle counter running");
-        else
-            $display("FAIL: cycle counter = %0d expected >= 10", cycles);
-
-        // retire 5 instructions
+        // --- instruction counter ---
         repeat(5) begin
-            instr_retired = 1;
-            @(posedge clk); #1;
-            instr_retired = 0;
-            @(posedge clk); #1;
+            instr_retired = 1; @(posedge clk); #1;
+            instr_retired = 0; @(posedge clk); #1;
         end
+        check(32'hFFFF2004, 5, "instructions", "==");
 
-        read_counter(32'hFFFF2004, instrs, "instructions retired");
-        if (instrs == 5)
-            $display("PASS: instruction counter = 5");
-        else
-            $display("FAIL: instruction counter = %0d expected 5", instrs);
-
-        // execute 4 branches, 2 mispredicted
+        // --- branch counter ---
         repeat(4) begin
-            branch_exec = 1;
-            @(posedge clk); #1;
-            branch_exec = 0;
-            @(posedge clk); #1;
+            branch_exec = 1; @(posedge clk); #1;
+            branch_exec = 0; @(posedge clk); #1;
         end
+        check(32'hFFFF2008, 4, "branches", "==");
 
+        // --- mispredict counter ---
         mispredict = 1; @(posedge clk); #1;
         mispredict = 0; @(posedge clk); #1;
         mispredict = 1; @(posedge clk); #1;
         mispredict = 0; @(posedge clk); #1;
+        check(32'hFFFF200C, 2, "mispredicts", "==");
 
-        read_counter(32'hFFFF2008, branches,    "branches");
-        read_counter(32'hFFFF200C, mispredicts, "mispredictions");
+        // --- dcache hit counter ---
+        repeat(6) begin
+            cache_hit = 1; @(posedge clk); #1;
+            cache_hit = 0; @(posedge clk); #1;
+        end
+        check(32'hFFFF2010, 6, "dcache hits", "==");
 
-        if (branches == 4)
-            $display("PASS: branch counter = 4");
-        else
-            $display("FAIL: branch counter = %0d expected 4", branches);
+        // --- dcache miss counter ---
+        repeat(3) begin
+            cache_miss = 1; @(posedge clk); #1;
+            cache_miss = 0; @(posedge clk); #1;
+        end
+        check(32'hFFFF2014, 3, "dcache misses", "==");
 
-        if (mispredicts == 2)
-            $display("PASS: mispredict counter = 2");
-        else
-            $display("FAIL: mispredict counter = %0d expected 2", mispredicts);
+        // --- icache hit counter ---
+        repeat(8) begin
+            icache_hit = 1; @(posedge clk); #1;
+            icache_hit = 0; @(posedge clk); #1;
+        end
+        check(32'hFFFF2018, 8, "icache hits", "==");
 
-        // verify CPI calculation
-        read_counter(32'hFFFF2000, cycles, "final cycles");
-        read_counter(32'hFFFF2004, instrs, "final instructions");
-        $display("CPI = %0d / %0d = ~%0d", cycles, instrs, cycles/instrs);
+        // --- icache miss counter ---
+        repeat(2) begin
+            icache_miss = 1; @(posedge clk); #1;
+            icache_miss = 0; @(posedge clk); #1;
+        end
+        check(32'hFFFF201C, 2, "icache misses", "==");
 
-        // test reset clears counters
+        // --- reset clears all counters ---
         rst = 1; @(posedge clk); #1; rst = 0;
-        read_counter(32'hFFFF2000, cycles, "cycles after reset");
-        if (cycles <= 1)
-            $display("PASS: reset clears counters");
-        else
-            $display("FAIL: reset did not clear counters");
+        check(32'hFFFF2000, 1, "cycles after reset", "==");
+        check(32'hFFFF2004, 0, "instrs after reset",  "==");
+        check(32'hFFFF2010, 0, "dcache hits after reset", "==");
+        check(32'hFFFF2018, 0, "icache hits after reset", "==");
 
         $display("========== DONE ==========");
         $finish;
