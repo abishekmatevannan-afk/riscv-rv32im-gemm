@@ -2,7 +2,7 @@
 
 module tb_simd_alu;
 
-    logic [31:0] a, b, result;
+    logic [31:0] a, b, acc, result;
     logic [2:0]  funct3;
     logic [6:0]  funct7;
     logic        valid;
@@ -10,6 +10,7 @@ module tb_simd_alu;
     simd_alu dut (
         .a       (a),
         .b       (b),
+        .acc     (acc),
         .funct3  (funct3),
         .funct7  (funct7),
         .result  (result),
@@ -23,7 +24,7 @@ module tb_simd_alu;
         input [31:0] expected,
         input string op_name
     );
-        a = in_a; b = in_b;
+        a = in_a; b = in_b; acc = 32'd0;
         funct3 = f3; funct7 = f7;
         #10;
         if (result !== expected)
@@ -112,6 +113,123 @@ module tb_simd_alu;
             3'b010, 7'b0000000,
             32'h00000000,
             "PDOT zero vector"
+        );
+
+        // PMACC — acc=0: result == PDOT
+        // [1,2,3,4].[5,6,7,8] = 5+12+21+32 = 70; acc=0 → result=70
+        begin
+            a = 32'h04030201; b = 32'h08070605; acc = 32'd0;
+            funct3 = 3'b011; funct7 = 7'b0000000; #10;
+            if (result !== 32'd70)
+                $display("FAIL: PMACC acc=0 | expected 70, got %0d", result);
+            else
+                $display("PASS: PMACC acc=0 | result=70");
+        end
+
+        // PMACC — chain: acc=70 → result=140
+        begin
+            a = 32'h04030201; b = 32'h08070605; acc = 32'd70;
+            funct3 = 3'b011; funct7 = 7'b0000000; #10;
+            if (result !== 32'd140)
+                $display("FAIL: PMACC acc=70 | expected 140, got %0d", result);
+            else
+                $display("PASS: PMACC acc=70 | result=140 (chain)");
+        end
+
+        // PMACC — large accumulator: 4*255*255=260100; acc=260100 → result=520200
+        begin
+            a = 32'hFFFFFFFF; b = 32'hFFFFFFFF; acc = 32'd260100;
+            funct3 = 3'b011; funct7 = 7'b0000000; #10;
+            if (result !== 32'd520200)
+                $display("FAIL: PMACC large | expected 520200, got %0d", result);
+            else
+                $display("PASS: PMACC large | result=520200 (INT32 accumulator)");
+        end
+
+        // PMACC — chain: acc=70 → result=140
+        begin
+            a = 32'h04030201; b = 32'h08070605; acc = 32'd70;
+            funct3 = 3'b011; funct7 = 7'b0000000; #10;
+            if (result !== 32'd140)
+                $display("FAIL: PMACC acc=70 | expected 140, got %0d", result);
+            else
+                $display("PASS: PMACC acc=70 | result=140 (chain)");
+        end
+
+        // PSRA — shamt=1: [100, -4, 50, -128] >> 1 = [50, -2, 25, -64]
+        // a = {-128, 50, -4, 100} = {0x80, 0x32, 0xFC, 0x64}
+        // a = 0x8032FC64
+        // expected = {0xC0, 0x19, 0xFE, 0x32} = 0xC019FE32
+        check(
+            32'h8032FC64,
+            32'h00000000,         // b unused
+            3'b100, 7'b0010001,   // funct3=100, funct7=001_0001 → shamt=1
+            32'hC019FE32,
+            "PSRA shamt=1 mixed signs"
+        );
+
+        // PSRA — shamt=0: identity
+        check(
+            32'hDEADBEEF,
+            32'h00000000,
+            3'b100, 7'b0010000,   // shamt=0 (funct7=0010000)
+            32'hDEADBEEF,
+            "PSRA shamt=0 identity"
+        );
+
+        // PSRA — shamt=7: all positive → 0 or 1, negative → -1 (0xFF)
+        // a = {0x40, 0xFF, 0x7F, 0x80} = 0x40FF7F80
+        // 0x40>>7=0, 0xFF(-1)>>7=-1=0xFF, 0x7F>>7=0, 0x80(-128)>>7=-1=0xFF
+        // expected = {0x00, 0xFF, 0x00, 0xFF} = 0x00FF00FF
+        check(
+            32'h40FF7F80,
+            32'h00000000,
+            3'b100, 7'b0010111,   // shamt=7 (funct7=001_0111)
+            32'h00FF00FF,
+            "PSRA shamt=7 sign saturation"
+        );
+
+        // PSRA — shamt=8 (>=8 fills with sign bit)
+        // a = {0x80, 0x7F, 0x80, 0x7F}: neg→0xFF, pos→0x00
+        // expected = {0xFF, 0x00, 0xFF, 0x00} = 0xFF00FF00
+        check(
+            32'h807F807F,
+            32'h00000000,
+            3'b100, 7'b0011000,   // shamt=8 (funct7=001_1000, bit3=1 → saturate)
+            32'hFF00FF00,
+            "PSRA shamt=8 saturate"
+        );
+
+        // PRELU — all non-negative: passes through unchanged
+        // a = {0x7F, 0x01, 0x00, 0x64} = 0x7F010064
+        check(
+            32'h7F010064,
+            32'h00000000,
+            3'b101, 7'b0100000,
+            32'h7F010064,
+            "PRELU all non-negative passthrough"
+        );
+
+        // PRELU — all negative: all zeroed
+        // a = {0xFF, 0x80, 0xFE, 0x81} = 0xFF80FE81 (signed: -1,-128,-2,-127)
+        check(
+            32'hFF80FE81,
+            32'h00000000,
+            3'b101, 7'b0100000,
+            32'h00000000,
+            "PRELU all negative zeroed"
+        );
+
+        // PRELU — mixed: positive lanes pass, negative lanes zeroed
+        // a = {0x7F(127), 0xFF(-1), 0x01(1), 0x80(-128)}
+        // a = 0x7FFF0180
+        // expected = {0x7F, 0x00, 0x01, 0x00} = 0x7F000100
+        check(
+            32'h7FFF0180,
+            32'h00000000,
+            3'b101, 7'b0100000,
+            32'h7F000100,
+            "PRELU mixed lanes"
         );
 
         // invalid funct3
