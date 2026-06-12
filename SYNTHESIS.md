@@ -3,7 +3,7 @@
 Tool: **Yosys 0.66** (git sha1 7f8fdfd8d7bc08c749a2a969388d3425d4f369d5)  
 Date: 2026-06-10  
 Top module: `top_pipeline`  
-Source: all 30 `.sv` files in `src/`
+Source: all 34 `.sv` files in `src/`
 
 ## How to reproduce
 
@@ -74,7 +74,7 @@ These ranges would only be confirmed by running Vivado synthesis + place-and-rou
 ## Key observations
 
 1. **Design elaborates and synthesises cleanly** — zero errors, zero undefined ports.
-2. **All 28 testbenches pass** after synthesis-safe rewrite (no `initial` blocks).
+2. **All 31 testbenches pass** after synthesis-safe rewrite (no `initial` blocks).
 3. **RV32M multiplier** will infer DSP48 blocks on Xilinx targets; Yosys maps it to LUTs here.
 4. **Effective pipeline LUT count is ~3,900** — the 143K headline figure is almost entirely flip-flop-mapped memory arrays, not logic (see breakdown above).
 5. **nextpnr-ice40 place-and-route fails** — the design requires 188,718 iCE40 LCs vs 7,680 on HX8K (2,457% utilisation). This is a direct consequence of the BRAM inference miss: on a Vivado/Quartus flow with BRAM attributes the design would fit and route cleanly.
@@ -88,9 +88,10 @@ These ranges would only be confirmed by running Vivado synthesis + place-and-rou
 | D$ (4KB)      | ~400           | 1               |
 | ISRAM (32KB)  | ~50            | 8               |
 | DSRAM (256KB) | ~50            | 64              |
+| Parallel MAC  | ~400           | 0               |
 | Systolic accel| ~500           | 0               |
 | UART + PMU    | ~300           | 0               |
-| **Total**     | **~4,500**     | **~74**         |
+| **Total**     | **~4,900**     | **~74**         |
 
 This estimate is consistent with comparable open-source RV32I+M cores (e.g. PicoRV32 ≈ 2.5K LUTs, VexRiscv ≈ 4–8K LUTs depending on features).
 
@@ -102,10 +103,11 @@ This estimate is consistent with comparable open-source RV32I+M cores (e.g. Pico
 |------------------|--------|--------|-------|-------------------|
 | Scalar (RV32M mul) | 1,065 |    841 | 1.266 | 1.00×             |
 | SIMD (PDOT)        |    261 |    201 | 1.299 | 4.08×             |
-| Systolic array     |     69 |     18 |   —   | 15.4×             |
+| Parallel MAC       |     79 |     — |   —   | 13.48×            |
+| Systolic array     |     87 |     — |   —   | 12.24×            |
 
 Scalar: hardware `mul` (RV32M), 4×4 triple-nested loop, 64 load-use stalls (lbu→mul each k-iteration).  
-SIMD: load-use stall before PDOT eliminated by instruction scheduling — 3 independent C-address instructions (slli/add/add) moved between `lw x21` and `pdot`, filling the stall slot. 261−201=60 overhead cycles come from branch mispredictions and cold cache.  
-D$ hit rate: 98.3% scalar / 96.2% SIMD. Systolic executes 4 PE cycles; CPU overhead is AXI4-Lite register setup (65 cycles).
+SIMD: load-use stall before PDOT eliminated by instruction scheduling — 3 independent C-address instructions (slli/add/add) moved between `lw x21` and `pdot`, filling the stall slot. 261−201=60 overhead cycles from branch mispredictions and cold cache.  
+D$ hit rate: 98.3% scalar / 96.2% SIMD. Parallel MAC fires all 16 PEs simultaneously, 4-cycle compute; 75 cycles of CPU overhead are AXI4-Lite register writes. Systolic array uses Kung-Leiserson output-stationary wavefront, 11-cycle compute; 76 cycles overhead. Higher CPU overhead than parallel MAC for a single 4×4 tile because the wavefront fill latency is longer.
 
 **Prior incorrect numbers (do not use):** old scalar 1,589/1,353=CPI 1.17 was artificially low — 8×64=512 dead NOPs (remnants of old shift-and-add loop) diluted the stall fraction. Old SIMD 277/201=CPI 1.38 was artificially high — load-use stall before every PDOT had not been scheduled away.
