@@ -127,7 +127,6 @@ module top_pipeline #(
     logic [31:0] mem_rs2_data;
     logic [4:0]  mem_rd_addr;
     logic [31:0] mem_pc_plus4;
-    logic [31:0] mem_read_data;
     logic        mem_reg_we, mem_mem_we, mem_mem_re;
     logic [1:0]  mem_wb_sel;
     logic [2:0]  mem_funct3;
