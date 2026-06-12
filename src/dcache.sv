@@ -172,11 +172,14 @@ module dcache (
  
     always_ff @(posedge clk) begin
         if (rst) begin
-            state     <= IDLE;
-            fill_wait <= 0;
-            fill_word <= 0;
-            mem_we    <= 0;
-            mem_re    <= 0;
+            state      <= IDLE;
+            fill_wait  <= 0;
+            fill_word  <= 0;
+            mem_we     <= 0;
+            mem_re     <= 0;
+            mem_addr   <= 32'd0;
+            mem_wd     <= 32'd0;
+            mem_funct3 <= 3'b000;
             for (i = 0; i < NUM_LINES; i++) begin
                 valid[i] <= 0;
                 dirty[i] <= 0;

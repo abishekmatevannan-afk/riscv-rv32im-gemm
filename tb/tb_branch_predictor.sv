@@ -153,6 +153,46 @@ module tb_branch_predictor;
         else
             $display("FAIL: BHT entries not independent");
 
+        // test 7: BTB tag mismatch prevents aliased prediction
+        // PC_A=0x080 and PC_B=0x180 share index PC[7:2]=6'b100000 (index 32)
+        // but have different PC[31:8] tags (0x000000 vs 0x000001).
+        // After training PC_A strongly taken, PC_B must still predict not-taken
+        // because the stored BTB tag (PC_A[31:8]=0) != PC_B[31:8]=1.
+        $display("\n--- Test 7: BTB tag prevents cross-PC aliasing ---");
+        // train PC_A = 0x080 to strongly taken
+        resolve_branch(32'h00000080, 1);
+        resolve_branch(32'h00000080, 1);
+        // verify PC_A predicts taken
+        if_pc = 32'h00000080; #1;
+        if (predict_taken !== 1)
+            $display("FAIL: PC_A should predict taken after training");
+        else
+            $display("PASS: PC_A = 0x080 predicts taken after training");
+        // PC_B shares the same index but different tag — must not alias
+        if_pc = 32'h00000180; #1;
+        if (predict_taken !== 0)
+            $display("FAIL: PC_B aliased to PC_A's BTB entry (tag check failed)");
+        else
+            $display("PASS: PC_B = 0x180 not aliased — tag mismatch correctly suppresses prediction");
+
+        // test 8: BTB eviction — training PC_B overwrites PC_A's tag at the shared index
+        $display("\n--- Test 8: BTB eviction on tag change ---");
+        // train PC_B (same index 32, tag=0x000001) as taken → evicts PC_A's entry
+        resolve_branch(32'h00000180, 1);
+        resolve_branch(32'h00000180, 1);
+        // PC_B now predicts taken (its tag is now stored)
+        if_pc = 32'h00000180; #1;
+        if (predict_taken !== 1)
+            $display("FAIL: PC_B should predict taken after training");
+        else
+            $display("PASS: PC_B = 0x180 predicts taken after training");
+        // PC_A's tag has been evicted — must now predict not-taken
+        if_pc = 32'h00000080; #1;
+        if (predict_taken !== 0)
+            $display("FAIL: PC_A should predict not-taken after BTB eviction");
+        else
+            $display("PASS: PC_A = 0x080 correctly predicts not-taken after eviction by PC_B");
+
         $display("\n========== DONE ==========");
         $finish;
     end

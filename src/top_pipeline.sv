@@ -911,8 +911,7 @@ module top_pipeline #(
         .mem_rs2_data  (mem_rs2_data),
         .mem_rd_addr   (mem_rd_addr),
         .mem_pc_plus4  (mem_pc_plus4),
-        .stall         (ex_mem_stall),
-        .flush         (1'b0)
+        .stall         (ex_mem_stall)
     );
 
 
@@ -1078,6 +1077,8 @@ module top_pipeline #(
                 else $error("SVA FAIL: dc_m_awvalid dropped before dc_m_awready");
             assert (!($past(io_m_awvalid) && !$past(io_m_awready)) || io_m_awvalid)
                 else $error("SVA FAIL: io_m_awvalid dropped before io_m_awready");
+            assert (!($past(sy_m_awvalid) && !$past(sy_m_awready)) || sy_m_awvalid)
+                else $error("SVA FAIL: sy_m_awvalid dropped before sy_m_awready");
         end
     end
 

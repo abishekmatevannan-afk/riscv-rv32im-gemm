@@ -267,7 +267,7 @@ sudo apt install iverilog
 make test-all
 ```
 
-Expected: `31 passed   0 failed`
+Expected: `33 passed   0 failed`
 
 ### Run individual module tests
 
@@ -331,14 +331,14 @@ make wave MODULE=pmacc_pipeline
 | Performance counters | All 8 counters via PMU | ✅ |
 | Single-cycle CPU | Regression baseline | ✅ |
 | Pipelined CPU | test1, test2, exception, matmul | ✅ |
-| **Total** | **31 testbenches** | **31/31** |
+| **Total** | **33 testbenches** | **33/33** |
 
 ---
 
 ## Known Limitations
 
 - **Direct-mapped caches** — conflict misses for working sets that alias to the same cache index. 2-way set associative is the natural next step.
-- **BTB has no tag bits** — addresses differing by 256 bytes alias to the same BTB entry. Low impact for small programs.
+- **Direct-mapped BTB** — 64 entries indexed by PC[7:2]; a new branch evicts the old entry at the same index. The tag check (PC[31:8]) prevents wrong-path redirects but cannot prevent a high-traffic entry from being evicted by a colliding PC.
 - **No FPGA timing closure** — Yosys synthesis completes (3,900 LUTs of pipeline logic excluding memory arrays); place-and-route requires `(* ram_style = "block" *)` attributes for BRAM inference before the design fits an iCE40. Vivado/Quartus flows with BRAM attributes are expected to close at ~100–150 MHz on Artix-7. See `SYNTHESIS.md` for details.
 
 ---
