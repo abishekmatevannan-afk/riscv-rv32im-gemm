@@ -17,7 +17,8 @@ INTEGRATION = top top_pipeline uart_integration uart_mem_map \
               parallel_mac systolic_array \
               mul_div \
               pmacc \
-              pmacc_pipeline
+              pmacc_pipeline \
+              psra_pipeline
 
 
 # make sim MODULE=<name>

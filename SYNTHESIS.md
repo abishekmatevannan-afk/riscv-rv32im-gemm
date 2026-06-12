@@ -74,7 +74,7 @@ These ranges would only be confirmed by running Vivado synthesis + place-and-rou
 ## Key observations
 
 1. **Design elaborates and synthesises cleanly** — zero errors, zero undefined ports.
-2. **All 31 testbenches pass** after synthesis-safe rewrite (no `initial` blocks).
+2. **All 32 testbenches pass** after synthesis-safe rewrite (no `initial` blocks).
 3. **RV32M multiplier** will infer DSP48 blocks on Xilinx targets; Yosys maps it to LUTs here.
 4. **Effective pipeline LUT count is ~3,900** — the 143K headline figure is almost entirely flip-flop-mapped memory arrays, not logic (see breakdown above).
 5. **nextpnr-ice40 place-and-route fails** — the design requires 188,718 iCE40 LCs vs 7,680 on HX8K (2,457% utilisation). This is a direct consequence of the BRAM inference miss: on a Vivado/Quartus flow with BRAM attributes the design would fit and route cleanly.
