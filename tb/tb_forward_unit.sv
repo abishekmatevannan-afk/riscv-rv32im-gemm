@@ -2,20 +2,24 @@
 
 module tb_forward_unit;
 
-    logic [4:0] ex_rs1_addr, ex_rs2_addr;
+    logic [4:0] ex_rs1_addr, ex_rs2_addr, ex_rd_addr;
+    logic       ex_is_pmacc;
     logic [4:0] mem_rd_addr, wb_rd_addr;
     logic       mem_reg_we, wb_reg_we;
-    logic [1:0] forward_a, forward_b;
+    logic [1:0] forward_a, forward_b, forward_acc;
 
     forward_unit dut (
-        .ex_rs1_addr (ex_rs1_addr),
-        .ex_rs2_addr (ex_rs2_addr),
-        .mem_rd_addr (mem_rd_addr),
-        .mem_reg_we  (mem_reg_we),
-        .wb_rd_addr  (wb_rd_addr),
-        .wb_reg_we   (wb_reg_we),
-        .forward_a   (forward_a),
-        .forward_b   (forward_b)
+        .ex_rs1_addr  (ex_rs1_addr),
+        .ex_rs2_addr  (ex_rs2_addr),
+        .ex_rd_addr   (ex_rd_addr),
+        .ex_is_pmacc  (ex_is_pmacc),
+        .mem_rd_addr  (mem_rd_addr),
+        .mem_reg_we   (mem_reg_we),
+        .wb_rd_addr   (wb_rd_addr),
+        .wb_reg_we    (wb_reg_we),
+        .forward_a    (forward_a),
+        .forward_b    (forward_b),
+        .forward_acc  (forward_acc)
     );
 
     task automatic check(
@@ -24,12 +28,14 @@ module tb_forward_unit;
         input [1:0] exp_a, exp_b,
         input string name
     );
-        ex_rs1_addr = rs1;
-        ex_rs2_addr = rs2;
-        mem_rd_addr = mem_rd;
-        wb_rd_addr  = wb_rd;
-        mem_reg_we  = mem_we;
-        wb_reg_we   = wb_we;
+        ex_rs1_addr  = rs1;
+        ex_rs2_addr  = rs2;
+        ex_rd_addr   = 5'd0;
+        ex_is_pmacc  = 0;
+        mem_rd_addr  = mem_rd;
+        wb_rd_addr   = wb_rd;
+        mem_reg_we   = mem_we;
+        wb_reg_we    = wb_we;
         #10;
         if (forward_a !== exp_a || forward_b !== exp_b)
             $display("FAIL: %s | fwd_a exp=%b got=%b | fwd_b exp=%b got=%b",
@@ -38,40 +44,68 @@ module tb_forward_unit;
             $display("PASS: %s | fwd_a=%b fwd_b=%b", name, forward_a, forward_b);
     endtask
 
+    task automatic check_acc(
+        input [4:0] rd, mem_rd, wb_rd,
+        input       is_pmacc, mem_we, wb_we,
+        input [1:0] exp_acc,
+        input string name
+    );
+        ex_rs1_addr  = 5'd0;
+        ex_rs2_addr  = 5'd0;
+        ex_rd_addr   = rd;
+        ex_is_pmacc  = is_pmacc;
+        mem_rd_addr  = mem_rd;
+        wb_rd_addr   = wb_rd;
+        mem_reg_we   = mem_we;
+        wb_reg_we    = wb_we;
+        #10;
+        if (forward_acc !== exp_acc)
+            $display("FAIL: %s | fwd_acc exp=%b got=%b", name, exp_acc, forward_acc);
+        else
+            $display("PASS: %s | fwd_acc=%b", name, forward_acc);
+    endtask
+
     initial begin
         $display("========== FORWARD UNIT TESTBENCH ==========");
 
         // no hazard
-        check(5'd1, 5'd2, 5'd3, 5'd4, 1, 1, 2'b00, 2'b00,
-              "no hazard");
+        check(5'd1, 5'd2, 5'd3, 5'd4, 1, 1, 2'b00, 2'b00, "no hazard");
 
         // EX/MEM forward on A
-        check(5'd1, 5'd2, 5'd1, 5'd4, 1, 1, 2'b10, 2'b00,
-              "EX/MEM forward A");
+        check(5'd1, 5'd2, 5'd1, 5'd4, 1, 1, 2'b10, 2'b00, "EX/MEM forward A");
 
         // EX/MEM forward on B
-        check(5'd1, 5'd2, 5'd2, 5'd4, 1, 1, 2'b00, 2'b10,
-              "EX/MEM forward B");
+        check(5'd1, 5'd2, 5'd2, 5'd4, 1, 1, 2'b00, 2'b10, "EX/MEM forward B");
 
         // MEM/WB forward on A
-        check(5'd1, 5'd2, 5'd5, 5'd1, 1, 1, 2'b01, 2'b00,
-              "MEM/WB forward A");
+        check(5'd1, 5'd2, 5'd5, 5'd1, 1, 1, 2'b01, 2'b00, "MEM/WB forward A");
 
         // MEM/WB forward on B
-        check(5'd1, 5'd2, 5'd5, 5'd2, 1, 1, 2'b00, 2'b01,
-              "MEM/WB forward B");
+        check(5'd1, 5'd2, 5'd5, 5'd2, 1, 1, 2'b00, 2'b01, "MEM/WB forward B");
 
         // EX/MEM takes priority over MEM/WB on A
-        check(5'd1, 5'd2, 5'd1, 5'd1, 1, 1, 2'b10, 2'b00,
-              "EX/MEM priority over MEM/WB A");
+        check(5'd1, 5'd2, 5'd1, 5'd1, 1, 1, 2'b10, 2'b00, "EX/MEM priority over MEM/WB A");
 
         // x0 never forwarded
-        check(5'd0, 5'd0, 5'd0, 5'd0, 1, 1, 2'b00, 2'b00,
-              "x0 never forwarded");
+        check(5'd0, 5'd0, 5'd0, 5'd0, 1, 1, 2'b00, 2'b00, "x0 never forwarded");
 
         // reg_we=0 means no forwarding
-        check(5'd1, 5'd2, 5'd1, 5'd2, 0, 0, 2'b00, 2'b00,
-              "reg_we=0 no forward");
+        check(5'd1, 5'd2, 5'd1, 5'd2, 0, 0, 2'b00, 2'b00, "reg_we=0 no forward");
+
+        // PMACC acc forwarding: EX/MEM fires when ex_is_pmacc=1 and mem_rd matches rd
+        check_acc(5'd5, 5'd5, 5'd9, 1, 1, 1, 2'b10, "pmacc EX/MEM forward acc");
+
+        // PMACC acc forwarding: MEM/WB fires when mem_rd doesn't match
+        check_acc(5'd5, 5'd9, 5'd5, 1, 1, 1, 2'b01, "pmacc MEM/WB forward acc");
+
+        // PMACC acc NO forward: ex_is_pmacc=0 (non-PMACC instruction, acc path inactive)
+        check_acc(5'd5, 5'd5, 5'd5, 0, 1, 1, 2'b00, "non-pmacc acc path inactive");
+
+        // PMACC acc: EX/MEM priority over MEM/WB for acc
+        check_acc(5'd5, 5'd5, 5'd5, 1, 1, 1, 2'b10, "pmacc EX/MEM priority for acc");
+
+        // PMACC acc: x0 rd must not forward (x0 hardwired zero, never in hazard)
+        check_acc(5'd0, 5'd0, 5'd0, 1, 1, 1, 2'b00, "pmacc x0 acc never forwarded");
 
         $display("========== DONE ==========");
         $finish;

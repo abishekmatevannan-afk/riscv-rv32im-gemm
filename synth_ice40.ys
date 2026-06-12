@@ -1,0 +1,37 @@
+# iCE40 synthesis — infers BRAM for cache arrays and SRAMs
+# Use synth_ice40 to separate logic LUTs from block RAM
+
+read_verilog -sv src/alu.sv
+read_verilog -sv src/simd_alu.sv
+read_verilog -sv src/mul_div_unit.sv
+read_verilog -sv src/register_file.sv
+read_verilog -sv src/control_unit.sv
+read_verilog -sv src/forward_unit.sv
+read_verilog -sv src/hazard_unit.sv
+read_verilog -sv src/branch_predictor.sv
+read_verilog -sv src/program_counter.sv
+read_verilog -sv src/if_id_reg.sv
+read_verilog -sv src/id_ex_reg.sv
+read_verilog -sv src/ex_mem_reg.sv
+read_verilog -sv src/mem_wb_reg.sv
+read_verilog -sv src/csr_regfile.sv
+read_verilog -sv src/exception_unit.sv
+read_verilog -sv src/perf_counters.sv
+read_verilog -sv src/uart_tx.sv
+read_verilog -sv src/uart_rx.sv
+read_verilog -sv src/uart_mem_map.sv
+read_verilog -sv src/dcache.sv
+read_verilog -sv src/icache.sv
+read_verilog -sv src/axi4_lite_icache_manager.sv
+read_verilog -sv src/axi4_lite_dcache_manager.sv
+read_verilog -sv src/axi4_lite_io_manager.sv
+read_verilog -sv src/axi4_lite_accel_manager.sv
+read_verilog -sv src/axi4_lite_uart_sub.sv
+read_verilog -sv src/axi4_lite_interconnect.sv
+read_verilog -sv src/systolic_array_sub.sv
+read_verilog -sv src/axi4_lite_sram_sub.sv
+read_verilog -sv src/top_pipeline.sv
+
+hierarchy -check -top top_pipeline
+synth_ice40 -top top_pipeline -flatten
+tee -o synth_ice40_report.txt stat

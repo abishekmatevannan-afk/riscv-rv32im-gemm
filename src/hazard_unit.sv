@@ -13,6 +13,8 @@ module hazard_unit (
     input  logic [4:0] ex_rd_addr,      // destination of load in EX
     input  logic [4:0] id_rs1_addr,     // source regs of instruction in ID
     input  logic [4:0] id_rs2_addr,
+    input  logic [4:0] id_rd_addr,      // destination of instruction in ID (PMACC acc source)
+    input  logic       id_is_pmacc,     // high when ID instruction is PMACC
 
     // branch/jump hazard detection
     input  logic       ex_branch,          // is EX stage a branch?
@@ -50,7 +52,8 @@ module hazard_unit (
     // either source of the instruction currently in ID
     assign load_use_hazard = ex_mem_re && (ex_rd_addr != 5'd0) &&
                              (ex_rd_addr == id_rs1_addr ||
-                              ex_rd_addr == id_rs2_addr);
+                              ex_rd_addr == id_rs2_addr ||
+                              (id_is_pmacc && ex_rd_addr == id_rd_addr));
 
     // control hazard:
     // branch taken or unconditional jump

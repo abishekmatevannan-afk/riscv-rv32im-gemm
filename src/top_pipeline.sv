@@ -93,14 +93,21 @@ module top_pipeline #(
     logic [1:0]  ex_wb_sel;
     logic [3:0]  ex_alu_ctrl;
 
-    logic [31:0] ex_fwd_a, ex_fwd_b;
+    logic [31:0] ex_fwd_a, ex_fwd_b, ex_fwd_acc;
     logic [31:0] ex_alu_a, ex_alu_b;
     logic [31:0] ex_alu_result;
     logic        ex_alu_zero;
     logic [31:0] ex_pc_branch, ex_pc_jump;
     logic        ex_branch_taken;
 
-    logic [1:0]  forward_a, forward_b;
+    logic [1:0]  forward_a, forward_b, forward_acc;
+
+    // PMACC: rd is both source (accumulator) and destination
+    logic        id_is_pmacc;
+    logic        ex_is_pmacc;
+    logic [31:0] id_acc_data;       // RF third-port read (rd register value)
+    logic [31:0] id_acc_data_fwd;   // WB-bypassed accumulator value
+    logic [31:0] ex_acc_data;       // Latched through ID/EX register
 
     // cache signals
     logic        cache_stall;
@@ -678,6 +685,14 @@ module top_pipeline #(
     assign id_rs2_data_fwd = (wb_reg_we && wb_rd_addr != 0 && wb_rd_addr == id_rs2_addr)
                            ? wb_data : id_rs2_data;
 
+    // WB bypass for PMACC accumulator: same timing as rs1/rs2 bypass
+    assign id_acc_data_fwd = (wb_reg_we && wb_rd_addr != 0 && wb_rd_addr == id_rd_addr)
+                           ? wb_data : id_acc_data;
+
+    // PMACC: custom opcode 0001011 (SIMD), funct3=011
+    assign id_is_pmacc = (id_opcode == 7'b0001011) && (id_funct3 == 3'b011);
+    assign ex_is_pmacc = is_simd && (ex_funct3 == 3'b011);
+
     assign id_valid = 1'b1;
 
     register_file RF (
@@ -686,10 +701,12 @@ module top_pipeline #(
         .we  (wb_reg_we),
         .rs1 (id_rs1_addr),
         .rs2 (id_rs2_addr),
+        .rs3 (id_rd_addr),      // third port: rd as accumulator source for PMACC
         .rd  (wb_rd_addr),
         .wd  (wb_data),
         .rd1 (id_rs1_data),
-        .rd2 (id_rs2_data)
+        .rd2 (id_rs2_data),
+        .rd3 (id_acc_data)
     );
 
     assign wb_csr_rd = csr_rd;
@@ -746,6 +763,8 @@ module top_pipeline #(
         .ex_csr_funct3 (ex_csr_funct3),
         .id_funct7         (id_funct7),
         .ex_funct7         (ex_funct7),
+        .id_acc_data       (id_acc_data_fwd),
+        .ex_acc_data       (ex_acc_data),
         .id_predict_taken  (id_predict_taken),
         .id_predict_target (id_predict_target),
         .ex_predict_taken  (ex_predict_taken),
@@ -779,6 +798,15 @@ module top_pipeline #(
         endcase
     end
 
+    always_comb begin
+        case (forward_acc)
+            2'b00:   ex_fwd_acc = ex_acc_data;
+            2'b01:   ex_fwd_acc = wb_data;
+            2'b10:   ex_fwd_acc = mem_alu_result;
+            default: ex_fwd_acc = ex_acc_data;
+        endcase
+    end
+
     assign ex_alu_a = (ex_opcode == 7'b0010111 ||
                        ex_opcode == 7'b1101111) ? ex_pc : ex_fwd_a;
     assign ex_alu_b = ex_alu_src ? ex_imm : ex_fwd_b;
@@ -808,6 +836,7 @@ module top_pipeline #(
     simd_alu SIMD (
         .a       (ex_fwd_a),
         .b       (ex_fwd_b),
+        .acc     (ex_fwd_acc),   // PMACC accumulator: forwarded rd value
         .funct3  (ex_funct3),
         .funct7  (ex_funct7),
         .result  (simd_result),
@@ -846,14 +875,17 @@ module top_pipeline #(
                             ex_pc + ex_imm;
 
     forward_unit FU (
-        .ex_rs1_addr (ex_rs1_addr),
-        .ex_rs2_addr (ex_rs2_addr),
-        .mem_rd_addr (mem_rd_addr),
-        .mem_reg_we  (mem_reg_we),
-        .wb_rd_addr  (wb_rd_addr),
-        .wb_reg_we   (wb_reg_we),
-        .forward_a   (forward_a),
-        .forward_b   (forward_b)
+        .ex_rs1_addr  (ex_rs1_addr),
+        .ex_rs2_addr  (ex_rs2_addr),
+        .ex_rd_addr   (ex_rd_addr),
+        .ex_is_pmacc  (ex_is_pmacc),
+        .mem_rd_addr  (mem_rd_addr),
+        .mem_reg_we   (mem_reg_we),
+        .wb_rd_addr   (wb_rd_addr),
+        .wb_reg_we    (wb_reg_we),
+        .forward_a    (forward_a),
+        .forward_b    (forward_b),
+        .forward_acc  (forward_acc)
     );
 
     ex_mem_reg EX_MEM (
@@ -954,6 +986,8 @@ module top_pipeline #(
         .ex_rd_addr         (ex_rd_addr),
         .id_rs1_addr        (id_rs1_addr),
         .id_rs2_addr        (id_rs2_addr),
+        .id_rd_addr         (id_rd_addr),
+        .id_is_pmacc        (id_is_pmacc),
         .ex_branch          (ex_branch),
         .ex_jump_mispredict (ex_jump_mispredict),
         .branch_taken       (ex_branch_taken),

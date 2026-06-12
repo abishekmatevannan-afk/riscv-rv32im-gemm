@@ -50,9 +50,11 @@ module id_ex_reg (
     output logic [31:0] ex_imm,
     output logic [6:0]  ex_opcode,
  
-    // SIMD
+    // SIMD / PMACC accumulator
     input  logic [6:0]  id_funct7,
     output logic [6:0]  ex_funct7,
+    input  logic [31:0] id_acc_data,   // PMACC accumulator (rd value from RF, WB-bypassed)
+    output logic [31:0] ex_acc_data,
  
     // branch predictor
     input  logic        id_predict_taken,
@@ -101,6 +103,7 @@ module id_ex_reg (
             ex_imm           <= 32'd0;
             ex_opcode        <= 7'd0;
             ex_funct7        <= 7'd0;
+            ex_acc_data      <= 32'd0;
             ex_valid         <= 0;
             ex_illegal       <= 0;
             ex_ecall         <= 0;
@@ -129,6 +132,7 @@ module id_ex_reg (
             ex_imm           <= id_imm;
             ex_opcode        <= id_opcode;
             ex_funct7        <= id_funct7;
+            ex_acc_data      <= id_acc_data;
             ex_valid         <= id_valid;
             ex_illegal       <= id_illegal;
             ex_ecall         <= id_ecall;

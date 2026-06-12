@@ -15,7 +15,9 @@ INTEGRATION = top top_pipeline uart_integration uart_mem_map \
               uart_integration_debug \
               perf_demo \
               parallel_mac systolic_array \
-              mul_div
+              mul_div \
+              pmacc \
+              pmacc_pipeline
 
 
 # make sim MODULE=<name>

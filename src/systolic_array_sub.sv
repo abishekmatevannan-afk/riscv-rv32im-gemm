@@ -10,22 +10,29 @@
 //   For k=0..3, this spans t = i+j+1 .. i+j+4.
 //   The last PE (i=3,j=3) finishes at t=10. Total compute = 11 cycles.
 //
-// Register map (offset from base, identical to parallel_mac_sub):
-//   0x00  CTRL    W   write 1 to start
-//   0x04  STATUS  R   bit 0 = done
-//   0x08  CYCLES  R   compute cycles (reads 11)
-//   0x10  A_ROW0  W   A[0][3:0] packed {byte3,byte2,byte1,byte0}
-//   0x14  A_ROW1  W
-//   0x18  A_ROW2  W
-//   0x1C  A_ROW3  W
-//   0x20  B_ROW0  W   B^T[0][3:0] packed (B stored transposed)
-//   0x24  B_ROW1  W
-//   0x28  B_ROW2  W
-//   0x2C  B_ROW3  W
-//   0x40  C_ROW0  R   C[0][3:0] packed {byte3,byte2,byte1,byte0}
-//   0x44  C_ROW1  R
-//   0x48  C_ROW2  R
-//   0x4C  C_ROW3  R
+// Register map (offset from base):
+//   0x00  CTRL        W   [0]=start, [1]=accumulate (skip clearing c_acc on start)
+//   0x04  STATUS      R   bit 0 = done
+//   0x08  CYCLES      R   compute cycles (reads 11)
+//   0x10  A_ROW0      W   A[0][3:0] packed {byte3,byte2,byte1,byte0}
+//   0x14  A_ROW1      W
+//   0x18  A_ROW2      W
+//   0x1C  A_ROW3      W
+//   0x20  B_ROW0      W   B^T[0][3:0] packed (B stored transposed)
+//   0x24  B_ROW1      W
+//   0x28  B_ROW2      W
+//   0x2C  B_ROW3      W
+//   0x30  SCALE_SHIFT W   [4:0] right-shift applied to c_acc before packing (default 0)
+//   0x34  ZERO_POINT  W   [7:0] additive offset after shift, before saturation (default 0)
+//   0x40  C_ROW0      R   C[0][3:0] packed: each byte = saturate8(c_acc>>shift + zp)
+//   0x44  C_ROW1      R
+//   0x48  C_ROW2      R
+//   0x4C  C_ROW3      R
+//   0x80-0xBC  C_INT32[r][c]  R  raw 32-bit c_acc: addr = 0x80 + r*0x10 + c*4
+//
+// Accumulate mode (CTRL[1]=1): c_acc is not cleared on start. a_pe and b_pe
+//   are always reset so the wavefront feed is clean for the new tile.
+// Requantization: c_row byte = saturate8((c_acc >> scale_shift) + zero_point)
 
 module systolic_array_sub (
     input  logic        clk,
@@ -55,7 +62,6 @@ module systolic_array_sub (
     output logic [1:0]  bresp
 );
 
-    // Loaded A and B rows (packed INT8)
     logic [31:0] a_reg [0:3];
     logic [31:0] b_reg [0:3];
 
@@ -78,12 +84,10 @@ module systolic_array_sub (
     endgenerate
 
     // Wavefront feed signals: skewed input to PE array
-    // a_feed[i] = a_byte[i][t-i] when 0 <= (t-i) <= 3, else 0
-    // b_feed[j] = b_byte[j][t-j] when 0 <= (t-j) <= 3, else 0
     logic [7:0] a_feed [0:3];
     logic [7:0] b_feed [0:3];
 
-    logic [3:0] cycle_counter;  // 0..10 during RUNNING
+    logic [3:0] cycle_counter;
     logic       running;
 
     generate
@@ -111,52 +115,83 @@ module systolic_array_sub (
     endgenerate
 
     // PE shift registers: A shifts right (j increases), B shifts down (i increases)
-    logic [7:0]  a_pe  [0:3][0:3];   // a_pe[row][col]
-    logic [7:0]  b_pe  [0:3][0:3];   // b_pe[row][col]
+    logic [7:0]  a_pe  [0:3][0:3];
+    logic [7:0]  b_pe  [0:3][0:3];
 
-    // Output accumulators (32-bit to avoid overflow)
+    // 32-bit accumulators
     logic [31:0] c_acc [0:3][0:3];
 
-    // Control state
     logic        done;
     logic [31:0] cycles;
 
-    // Pack C output rows
-    logic [31:0] c_row [0:3];
-    generate
-        genvar gr;
-        for (gr = 0; gr < 4; gr++) begin : pack_c
-            assign c_row[gr] = {c_acc[gr][3][7:0], c_acc[gr][2][7:0],
-                                c_acc[gr][1][7:0], c_acc[gr][0][7:0]};
-        end
-    endgenerate
+    logic [4:0]  scale_shift;
+    logic [7:0]  zero_point;
 
-    // AXI read: combinational, always-ready
+    // Shift, add zero_point, saturate to [0, 255]
+    function automatic [7:0] do_requant(
+        input [31:0] acc,
+        input [4:0]  sshift,
+        input [7:0]  zp
+    );
+        logic [32:0] s;
+        s = {1'b0, (acc >> sshift)} + {25'd0, zp};
+        do_requant = (|s[32:8]) ? 8'hFF : s[7:0];
+    endfunction
+
+    logic [31:0] c_row [0:3];
+    always_comb begin
+        for (int i = 0; i < 4; i++)
+            c_row[i] = {do_requant(c_acc[i][3], scale_shift, zero_point),
+                        do_requant(c_acc[i][2], scale_shift, zero_point),
+                        do_requant(c_acc[i][1], scale_shift, zero_point),
+                        do_requant(c_acc[i][0], scale_shift, zero_point)};
+    end
+
     assign arready = 1'b1;
     assign rvalid  = arvalid;
     assign rresp   = 2'b00;
 
-    assign rdata = (araddr[7:0] == 8'h04) ? {31'd0, done} :
-                   (araddr[7:0] == 8'h08) ? cycles        :
-                   (araddr[7:0] == 8'h40) ? c_row[0]      :
-                   (araddr[7:0] == 8'h44) ? c_row[1]      :
-                   (araddr[7:0] == 8'h48) ? c_row[2]      :
-                   (araddr[7:0] == 8'h4C) ? c_row[3]      :
-                                            32'd0;
+    always_comb begin
+        case (araddr[7:0])
+            8'h04: rdata = {31'd0, done};
+            8'h08: rdata = cycles;
+            8'h40: rdata = c_row[0];
+            8'h44: rdata = c_row[1];
+            8'h48: rdata = c_row[2];
+            8'h4C: rdata = c_row[3];
+            8'h80: rdata = c_acc[0][0];
+            8'h84: rdata = c_acc[0][1];
+            8'h88: rdata = c_acc[0][2];
+            8'h8C: rdata = c_acc[0][3];
+            8'h90: rdata = c_acc[1][0];
+            8'h94: rdata = c_acc[1][1];
+            8'h98: rdata = c_acc[1][2];
+            8'h9C: rdata = c_acc[1][3];
+            8'hA0: rdata = c_acc[2][0];
+            8'hA4: rdata = c_acc[2][1];
+            8'hA8: rdata = c_acc[2][2];
+            8'hAC: rdata = c_acc[2][3];
+            8'hB0: rdata = c_acc[3][0];
+            8'hB4: rdata = c_acc[3][1];
+            8'hB8: rdata = c_acc[3][2];
+            8'hBC: rdata = c_acc[3][3];
+            default: rdata = 32'd0;
+        endcase
+    end
 
-    // AXI write: always-ready
     assign awready = 1'b1;
     assign wready  = 1'b1;
     assign bvalid  = awvalid && wvalid;
     assign bresp   = 2'b00;
 
-    // Main sequential logic
     always_ff @(posedge clk) begin
         if (rst) begin
             running       <= 0;
             done          <= 0;
             cycles        <= 0;
             cycle_counter <= 0;
+            scale_shift   <= 0;
+            zero_point    <= 0;
             for (int i = 0; i < 4; i++) begin
                 a_reg[i] <= 0;
                 b_reg[i] <= 0;
@@ -168,15 +203,14 @@ module systolic_array_sub (
             end
         end else begin
 
-            // AXI write path
             if (awvalid && wvalid) begin
                 case (awaddr[7:0])
                     8'h00: if (wdata[0]) begin
                         for (int i = 0; i < 4; i++)
                             for (int j = 0; j < 4; j++) begin
-                                c_acc[i][j] <= 0;
-                                a_pe[i][j]  <= 0;
-                                b_pe[i][j]  <= 0;
+                                if (!wdata[1]) c_acc[i][j] <= 0; // preserve in accumulate mode
+                                a_pe[i][j] <= 0;                 // always reset wavefront regs
+                                b_pe[i][j] <= 0;
                             end
                         done          <= 0;
                         cycle_counter <= 0;
@@ -190,19 +224,20 @@ module systolic_array_sub (
                     8'h24: if (!running) b_reg[1] <= wdata;
                     8'h28: if (!running) b_reg[2] <= wdata;
                     8'h2C: if (!running) b_reg[3] <= wdata;
+                    8'h30: scale_shift <= wdata[4:0];
+                    8'h34: zero_point  <= wdata[7:0];
                     default: ;
                 endcase
             end
 
-            // Systolic wavefront FSM
             if (running) begin
-                // 1. Accumulate using OLD a_pe / b_pe values (non-blocking semantics)
+                // Accumulate using old a_pe/b_pe (non-blocking semantics)
                 for (int i = 0; i < 4; i++)
                     for (int j = 0; j < 4; j++)
                         c_acc[i][j] <= c_acc[i][j] +
                             ({24'd0, a_pe[i][j]} * {24'd0, b_pe[i][j]});
 
-                // 2. Shift A right: col 0 takes a_feed, cols 1-3 shift from left neighbor
+                // Shift A right
                 for (int i = 0; i < 4; i++) begin
                     a_pe[i][0] <= a_feed[i];
                     a_pe[i][1] <= a_pe[i][0];
@@ -210,7 +245,7 @@ module systolic_array_sub (
                     a_pe[i][3] <= a_pe[i][2];
                 end
 
-                // 3. Shift B down: row 0 takes b_feed, rows 1-3 shift from upper neighbor
+                // Shift B down
                 for (int j = 0; j < 4; j++) begin
                     b_pe[0][j] <= b_feed[j];
                     b_pe[1][j] <= b_pe[0][j];
@@ -218,7 +253,6 @@ module systolic_array_sub (
                     b_pe[3][j] <= b_pe[2][j];
                 end
 
-                // 4. Advance counter; done at cycle 10 (11 total cycles: 0..10)
                 cycle_counter <= cycle_counter + 1;
 
                 if (cycle_counter == 4'd10) begin
