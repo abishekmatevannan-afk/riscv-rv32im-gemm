@@ -131,6 +131,18 @@ Seven instructions at RISC-V custom opcode `0001011`, operating on 32-bit regist
 
 **PMACC** reads `rd` as a third source (accumulator), writes back `rd + PDOT(rs1, rs2)`. The register file has a dedicated third read port; the hazard unit and forward unit both handle the accumulator path independently from rs1/rs2.
 
+### Pipeline Verification (SVA)
+Four invariants are checked as SystemVerilog assertions at simulation time — synthesizers treat them as no-ops, iverilog evaluates them on every testbench run:
+
+| Assertion | Location | Property |
+|-----------|----------|----------|
+| Forwarding one-hot | `forward_unit.sv` | `forward_a` and `forward_b` never `2'b11` (undefined mux select) |
+| x0 hardwired zero | `register_file.sv` | `regs[0] === 32'd0` on every clock cycle |
+| Load-use → stall | `hazard_unit.sv` | `load_use_hazard` implies `if_id_stall` |
+| AXI awvalid sticky | `top_pipeline.sv` | awvalid stays high until awready on all 4 AXI channels |
+
+Any violation fires `$error` during simulation; `make test-all` catches it automatically.
+
 ### Hardware Accelerators
 
 **Parallel MAC** (`0xFFFE0000`): 4×4 systolic PE grid where all 16 PEs fire in parallel each k-step. Computes a full 4×4 INT8 GEMM in 4 cycles. Supports:
@@ -157,6 +169,8 @@ Seven instructions at RISC-V custom opcode `0001011`, operating on 32-bit regist
 **SIMD**: load-use stall before each PDOT eliminated by scheduling three independent C-address instructions into the stall slot. D$ hit rate 96.2%. 261−201=60 overhead cycles from branch mispredictions and cold cache.  
 **Parallel MAC**: 4-cycle PE compute; remaining 75 cycles are AXI4-Lite register writes (4×4 A tiles, 4×4 B columns, CTRL).  
 **Systolic Array**: 11-cycle wavefront fill/drain; 76 cycles AXI overhead. Higher CPU overhead than parallel MAC for single 4×4 tile because the wavefront must fully drain before results are valid.
+
+**16×16 tiled matmul** (`make sim MODULE=matmul_16x16`): A=B=all-1s (16×16), tiled as 16 output tiles of 4×4 with 4 K-passes each. First K-pass uses CTRL=1 (clears `c_acc`); subsequent three use CTRL=3 (preserve `c_acc`). Result: C[i][j]=16 for all entries (one pass gives 4; four accumulated passes give 16). Proves the INT32 accumulator correctly chains K > 4 passes — the feature exists for exactly the question *"how does your accelerator handle matrices larger than the PE array?"*
 
 ---
 
@@ -222,9 +236,11 @@ rv32i-core-cpu/
 │   ├── tb_simd_alu.sv               # PADD/PSUB/PMUL/PDOT/PMACC/PSRA/PRELU
 │   ├── tb_pmacc.sv                  # PMACC unit test (acc port isolation)
 │   ├── tb_pmacc_pipeline.sv         # PMACC pipeline integration (all fwd paths)
+│   ├── tb_psra_pipeline.sv          # PSRA/PRELU pipeline integration (all fwd paths)
 │   ├── tb_parallel_mac.sv           # Accelerator: baseline, requant, K-tiling
 │   ├── tb_systolic_array.sv         # Accelerator: same test suite at 0xFFFD
 │   ├── tb_matmul.sv                 # 4-way benchmark (scalar/SIMD/pmac/systolic)
+│   ├── tb_matmul_16x16.sv           # 16×16 tiled matmul, proves accumulate mode
 │   ├── tb_hazard_unit.sv
 │   ├── tb_forward_unit.sv
 │   ├── tb_dcache.sv
@@ -243,7 +259,9 @@ rv32i-core-cpu/
 │   ├── matmul_scalar.hex            # 4×4 INT8 GEMM, RV32M mul
 │   ├── matmul_simd.hex              # 4×4 INT8 GEMM, PDOT
 │   ├── matmul_systolic.hex          # 4×4 INT8 GEMM, systolic array
-│   └── pmacc_test.hex               # PMACC forwarding paths test
+│   ├── pmacc_test.hex               # PMACC forwarding paths test
+│   ├── psra_prelu_test.hex          # PSRA/PRELU forwarding paths test
+│   └── matmul_16x16_systolic.hex    # 16×16 tiled matmul, accumulate mode
 └── Makefile
 ```
 
@@ -320,6 +338,7 @@ make wave MODULE=pmacc_pipeline
 | SIMD ALU | PADD/PSUB/PMUL/PDOT/PMACC/PSRA/PRELU | ✅ |
 | PMACC unit | acc=0, chain, large INT32 | ✅ |
 | PMACC pipeline | All 4 forwarding paths end-to-end | ✅ |
+| PSRA/PRELU pipeline | All forwarding paths end-to-end | ✅ |
 | D$ cache | Miss, fill, writeback, bypass | ✅ |
 | I$ cache | Miss, fill, invalidate | ✅ |
 | Branch predictor | BHT update, BTB, mispredict flush | ✅ |
@@ -329,8 +348,10 @@ make wave MODULE=pmacc_pipeline
 | UART TX/RX | 8N1 framing, FIFO, IRQ | ✅ |
 | Exception handling | ECALL, MRET, illegal, IRQ, stack save/restore | ✅ |
 | Performance counters | All 8 counters via PMU | ✅ |
+| 16×16 tiled matmul | Accumulate mode (CTRL bit 1), 4 K-passes → C[i][j]=16 | ✅ |
 | Single-cycle CPU | Regression baseline | ✅ |
 | Pipelined CPU | test1, test2, exception, matmul | ✅ |
+| SVA assertions | forwarding one-hot, x0 invariant, load-use→stall, AXI awvalid sticky (all 4 channels) | ✅ |
 | **Total** | **33 testbenches** | **33/33** |
 
 ---

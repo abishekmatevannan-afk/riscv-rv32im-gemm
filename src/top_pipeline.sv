@@ -1079,6 +1079,8 @@ module top_pipeline #(
                 else $error("SVA FAIL: io_m_awvalid dropped before io_m_awready");
             assert (!($past(sy_m_awvalid) && !$past(sy_m_awready)) || sy_m_awvalid)
                 else $error("SVA FAIL: sy_m_awvalid dropped before sy_m_awready");
+            assert (!($past(ac_m_awvalid) && !$past(ac_m_awready)) || ac_m_awvalid)
+                else $error("SVA FAIL: ac_m_awvalid dropped before ac_m_awready");
         end
     end
 
