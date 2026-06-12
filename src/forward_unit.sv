@@ -78,4 +78,10 @@ module forward_unit (
         end
     end
 
+    // SVA: forwarding mux encodings — 2'b11 is undefined and must never appear
+    always_comb begin
+        assert (forward_a !== 2'b11) else $error("SVA FAIL: forward_a=2'b11 (undefined mux select)");
+        assert (forward_b !== 2'b11) else $error("SVA FAIL: forward_b=2'b11 (undefined mux select)");
+    end
+
 endmodule

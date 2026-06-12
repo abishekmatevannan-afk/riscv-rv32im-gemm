@@ -35,4 +35,10 @@ module register_file (
     assign rd2 = (rs2 == 5'd0) ? 32'd0 : regs[rs2];
     assign rd3 = (rs3 == 5'd0) ? 32'd0 : regs[rs3];
 
+    // SVA: x0 is hardwired zero — any write to regs[0] is a bug
+    always_ff @(posedge clk) begin
+        if (!rst)
+            assert (regs[0] === 32'd0) else $error("SVA FAIL: regs[0] != 0 (x0 written)");
+    end
+
 endmodule

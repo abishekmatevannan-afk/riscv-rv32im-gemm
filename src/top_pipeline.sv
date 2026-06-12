@@ -1069,4 +1069,16 @@ module top_pipeline #(
         .trap_epc     (trap_epc)
     );
 
+    // SVA: AXI4-Lite awvalid must remain asserted until awready (protocol compliance)
+    // |=> expressed as: if awvalid was high and awready was low last cycle,
+    // awvalid must still be high this cycle.
+    always_ff @(posedge clk) begin
+        if (!rst) begin
+            assert (!($past(dc_m_awvalid) && !$past(dc_m_awready)) || dc_m_awvalid)
+                else $error("SVA FAIL: dc_m_awvalid dropped before dc_m_awready");
+            assert (!($past(io_m_awvalid) && !$past(io_m_awready)) || io_m_awvalid)
+                else $error("SVA FAIL: io_m_awvalid dropped before io_m_awready");
+        end
+    end
+
 endmodule

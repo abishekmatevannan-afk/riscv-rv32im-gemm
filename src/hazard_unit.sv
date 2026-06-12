@@ -74,8 +74,11 @@ module hazard_unit (
     assign id_ex_flush = (load_use_hazard || control_hazard || icache_stall) && !any_stall;
     assign if_id_flush = control_hazard && !any_stall;
 
-
-
+    // SVA: load-use hazard must freeze both IF and ID stages
+    always_comb begin
+        assert (!load_use_hazard || if_id_stall)
+            else $error("SVA FAIL: load_use_hazard asserted but if_id_stall low");
+    end
 
 
     
