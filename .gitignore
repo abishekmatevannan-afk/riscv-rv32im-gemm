@@ -14,4 +14,9 @@ sim/
 .DS_Store
 **/.DS_Store
 fix_summary.txt
-*.json
+*.json # Yosys netlists
+*.blif # 
+*.asc # iCE40 bitstream
+*.bin # binary outputs
+sim/*.vcd # waveform dumps
+sim/*.vvp 
