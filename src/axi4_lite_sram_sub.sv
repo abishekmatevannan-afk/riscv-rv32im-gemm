@@ -46,7 +46,7 @@ module axi4_lite_sram_sub #(
 );
     localparam AW = $clog2(DEPTH_WORDS);  // address bits for word index
 
-    logic [31:0] mem [0:DEPTH_WORDS-1];
+    (* ram_style = "block" *) logic [31:0] mem [0:DEPTH_WORDS-1];
 
     // Memory initialization: $readmemh is synthesizable for Xilinx BRAM init.
     // Zero-init is the default for uninitialized BRAM entries.

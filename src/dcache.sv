@@ -39,10 +39,10 @@ module dcache (
     localparam OFF_WIDTH  = 4;
  
     // cache storage
-    logic                valid [NUM_LINES-1:0];
-    logic                dirty [NUM_LINES-1:0];
-    logic [TAG_WIDTH-1:0] tags [NUM_LINES-1:0];
-    logic [31:0]          data [NUM_LINES-1:0][LINE_WORDS-1:0];
+    (* ram_style = "block" *) logic                valid [NUM_LINES-1:0];
+    (* ram_style = "block" *) logic                dirty [NUM_LINES-1:0];
+    (* ram_style = "block" *) logic [TAG_WIDTH-1:0] tags [NUM_LINES-1:0];
+    (* ram_style = "block" *) logic [31:0]          data [NUM_LINES-1:0][LINE_WORDS-1:0];
  
     // ADDRESS BREAKDOWN
     // All bit-selects on cpu_addr are done here as named wires

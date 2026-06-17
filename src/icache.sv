@@ -34,9 +34,9 @@ module icache (
     localparam TAG_WIDTH  = 20;
     localparam IDX_WIDTH  = 8;
 
-    logic                 valid [NUM_LINES-1:0];
-    logic [TAG_WIDTH-1:0] tags  [NUM_LINES-1:0];
-    logic [31:0]          data  [NUM_LINES-1:0][LINE_WORDS-1:0];
+    (* ram_style = "block" *) logic                 valid [NUM_LINES-1:0];
+    (* ram_style = "block" *) logic [TAG_WIDTH-1:0] tags  [NUM_LINES-1:0];
+    (* ram_style = "block" *) logic [31:0]          data  [NUM_LINES-1:0][LINE_WORDS-1:0];
     logic                 request_miss;
 
     // address breakdown
