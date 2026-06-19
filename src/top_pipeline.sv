@@ -606,6 +606,8 @@ module top_pipeline #(
         .icache_stall(icache_stall),
         .icache_hit  (icache_hit),
         .icache_miss (icache_miss),
+        .pc_next_i   (pc_next),
+        .pc_stall_i  (pc_stall),
         .mem_re      (ic_mem_re),
         .mem_addr    (ic_mem_addr),
         .mem_rd      (ic_mem_rd)
@@ -931,6 +933,8 @@ module top_pipeline #(
         .cache_stall (cache_stall),
         .cache_hit   (cache_hit),
         .cache_miss  (cache_miss),
+        .ex_addr_i   (ex_result),
+        .ex_stall_i  (ex_mem_stall),
         .mem_we      (dmem_we),
         .mem_re      (dmem_re),
         .mem_addr    (dmem_addr),

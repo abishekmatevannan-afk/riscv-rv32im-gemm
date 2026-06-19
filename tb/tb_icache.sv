@@ -13,6 +13,12 @@ module tb_icache;
     logic [31:0] mem_addr;
     logic [31:0] mem_rd;
 
+    // Prefetch port wires — testbench drives same-cycle address (conservative)
+    logic [31:0] pc_next_tb;
+    logic        pc_stall_tb;
+    assign pc_next_tb  = cpu_addr;
+    assign pc_stall_tb = icache_stall;
+
     icache DUT (
         .clk         (clk),
         .rst         (rst),
@@ -23,6 +29,8 @@ module tb_icache;
         .icache_stall(icache_stall),
         .icache_hit  (icache_hit),
         .icache_miss (icache_miss),
+        .pc_next_i   (pc_next_tb),
+        .pc_stall_i  (pc_stall_tb),
         .mem_re      (mem_re),
         .mem_addr    (mem_addr),
         .mem_rd      (mem_rd)

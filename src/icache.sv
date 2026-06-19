@@ -23,6 +23,12 @@ module icache (
     output logic        icache_hit,
     output logic        icache_miss,
 
+    // Prefetch address — the combinational next-PC that the PC register will
+    // take on the next posedge.  Driving BRAM one cycle early hides its
+    // 1-cycle latency so hits have zero added stall cycles.
+    input  logic [31:0] pc_next_i,
+    input  logic        pc_stall_i,  // when 1 the PC will NOT advance; hold data_q
+
     // Memory interface (to instruction_memory)
     output logic        mem_re,
     output logic [31:0] mem_addr,
@@ -34,10 +40,30 @@ module icache (
     localparam TAG_WIDTH  = 20;
     localparam IDX_WIDTH  = 8;
 
-    (* ram_style = "block" *) logic                 valid [NUM_LINES-1:0];
-    (* ram_style = "block" *) logic [TAG_WIDTH-1:0] tags  [NUM_LINES-1:0];
-    (* ram_style = "block" *) logic [31:0]          data  [NUM_LINES-1:0][LINE_WORDS-1:0];
+    (* ram_style = "distributed" *) logic                 valid [NUM_LINES-1:0];
+    (* ram_style = "distributed" *) logic [TAG_WIDTH-1:0] tags  [NUM_LINES-1:0];
+    (* ram_style = "block" *)       logic [31:0]          data  [NUM_LINES-1:0][LINE_WORDS-1:0];
     logic                 request_miss;
+
+    // Registered read of data[] — driven one cycle ahead by pc_next_i so
+    // the result is ready the same cycle that if_pc == pc_next_i.
+    // Frozen (held) whenever pc_stall_i=1 so the value stays valid for
+    // the frozen PC.
+    logic [31:0] data_q;
+
+    // Word captured from mem_rd during the fill cycle whose fill_word matches
+    // word_off.  Used as cpu_rd in the one-cycle DONE state so the pipeline
+    // never sees a combinational read from a block-RAM array.
+    logic [31:0] fill_data_q;
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            data_q      <= 32'd0;
+            fill_data_q <= 32'd0;
+        end else if (!pc_stall_i) begin
+            data_q <= data[pc_next_i[11:4]][pc_next_i[3:2]];
+        end
+    end
 
     // address breakdown
     logic [TAG_WIDTH-1:0] addr_tag;
@@ -48,6 +74,8 @@ module icache (
     assign addr_idx = cpu_addr[11:4];
     assign word_off = cpu_addr[3:2];
 
+    // Hit detection stays combinational: valid[] and tags[] are distributed RAM
+    // so Vivado maps them to LUT RAM which supports same-cycle reads.
     logic hit;
     assign hit = valid[addr_idx] && (tags[addr_idx] == addr_tag);
 
@@ -64,12 +92,12 @@ module icache (
     integer i;
 
     // instruction read mux
-    // DONE state: line just filled, data is valid for cpu_addr
-    // hit: normal cache hit in IDLE
-    // otherwise: NOP (pipeline is stalled anyway, this value won't be used)
-    assign cpu_rd = (hit || state == DONE)
-                  ? data[addr_idx][word_off]
-                  : 32'h00000013;  // NOP
+    // DONE: use fill_data_q (captured from mem_rd during fill at word_off)
+    // hit:  use data_q (BRAM prefetch registered one cycle ahead via pc_next_i)
+    // else: NOP bubble (pipeline stalled, value discarded)
+    assign cpu_rd = (state == DONE) ? fill_data_q
+                  : hit             ? data_q
+                  :                   32'h00000013;
 
     // PMU signals
     assign icache_hit   = cpu_re && hit && (state == IDLE || state == DONE);
@@ -121,6 +149,8 @@ module icache (
                         // instruction_memory is combinational:
                         // mem_addr from the previous cycle is now valid in mem_rd
                         data[addr_idx][fill_word] <= mem_rd;
+                        if (fill_word == word_off)
+                            fill_data_q <= mem_rd;  // save the word cpu_addr needs
 
                         if (fill_word == 2'b11) begin
                             valid[addr_idx] <= 1;
