@@ -48,6 +48,20 @@ module tb_top_pipeline;
                 $time, cpu1.if_pc, cpu1.bp_predict_taken, cpu1.bp_predict_target);
     end
 
+    // Trace addr=4 accesses to diagnose the SH→LHU race
+    always @(posedge clk2) begin
+        if (cpu2.mem_alu_result == 32'h00000004 && (cpu2.mem_mem_we || cpu2.mem_mem_re))
+            $display("t=%0t %s addr=4 wd=%08h rd=%08h hit=%b state=%0d dirty0=%b valid0=%b",
+                $time,
+                cpu2.mem_mem_we ? "WRITE" : "READ ",
+                cpu2.mem_rs2_data,
+                cpu2.cache_rd,
+                cpu2.DCACHE.hit,
+                cpu2.DCACHE.state,
+                cpu2.DCACHE.dirty[0],
+                cpu2.DCACHE.valid[0]);
+    end
+
     // =========================================================
     // DEBUG PROBES — fires every cycle cpu_we=1 reaches dcache
     // =========================================================

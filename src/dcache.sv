@@ -53,24 +53,13 @@ module dcache (
     (* ram_style = "distributed" *) logic [TAG_WIDTH-1:0] tags [NUM_LINES-1:0];
     (* ram_style = "block" *)       logic [31:0]          data [NUM_LINES-1:0][LINE_WORDS-1:0];
 
-    // Registered read of data[] — driven one cycle ahead by ex_addr_i so the
-    // result is ready when cpu_addr == ex_addr_i (i.e. the next MEM cycle).
-    // Frozen (held) whenever ex_stall_i=1.
+    // Registered BRAM-prefetch read of data[]; see always_ff after hit detection.
     logic [31:0] cached_word_q;
 
     // Word captured from mem_rd during the fill cycle that fills word_off.
     // Used as cpu_rd in the DONE state so there is no combinational BRAM read.
     logic [31:0] fill_wd_q;
 
-    always_ff @(posedge clk) begin
-        if (rst) begin
-            cached_word_q <= 32'd0;
-            fill_wd_q     <= 32'd0;
-        end else if (!ex_stall_i) begin
-            cached_word_q <= data[ex_addr_i[11:4]][ex_addr_i[3:2]];
-        end
-    end
- 
     // ADDRESS BREAKDOWN
     // All bit-selects on cpu_addr are done here as named wires
     // so that always_* blocks never contain bit-selects of a
@@ -95,7 +84,43 @@ module dcache (
     // hit detection
     logic hit;
     assign hit = valid[addr_idx] && (tags[addr_idx] == addr_tag);
- 
+
+    // Prefetch always_ff — placed here so addr_idx, word_off, byte_off_hi, hit
+    // are all in scope (Icarus Verilog requires declaration before use).
+    // Write-hit forwarding: when the MEM-stage write-hit and the EX-stage
+    // prefetch target the same cache word, both the non-blocking write to data[]
+    // and this non-blocking read fire at the same posedge — the read would see
+    // the pre-posedge (stale) value.  Detect and forward instead.
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            cached_word_q <= 32'd0;
+            fill_wd_q     <= 32'd0;
+        end else if (!ex_stall_i) begin
+            if (cpu_we && hit && !is_io &&
+                ex_addr_i[11:4] == addr_idx && ex_addr_i[3:2] == word_off) begin
+                case (cpu_funct3)
+                    3'b000: begin // SB — one byte changes; merge with old word
+                        case (byte_off)
+                            2'b00: cached_word_q <= {data[ex_addr_i[11:4]][ex_addr_i[3:2]][31: 8], cpu_wd[7:0]};
+                            2'b01: cached_word_q <= {data[ex_addr_i[11:4]][ex_addr_i[3:2]][31:16], cpu_wd[7:0], data[ex_addr_i[11:4]][ex_addr_i[3:2]][ 7:0]};
+                            2'b10: cached_word_q <= {data[ex_addr_i[11:4]][ex_addr_i[3:2]][31:24], cpu_wd[7:0], data[ex_addr_i[11:4]][ex_addr_i[3:2]][15:0]};
+                            2'b11: cached_word_q <= {cpu_wd[7:0], data[ex_addr_i[11:4]][ex_addr_i[3:2]][23:0]};
+                        endcase
+                    end
+                    3'b001: begin // SH — two bytes change; merge with old word
+                        if (!byte_off_hi)
+                            cached_word_q <= {data[ex_addr_i[11:4]][ex_addr_i[3:2]][31:16], cpu_wd[15:0]};
+                        else
+                            cached_word_q <= {cpu_wd[15:0], data[ex_addr_i[11:4]][ex_addr_i[3:2]][15:0]};
+                    end
+                    default: cached_word_q <= cpu_wd; // SW — entire word replaced
+                endcase
+            end else begin
+                cached_word_q <= data[ex_addr_i[11:4]][ex_addr_i[3:2]];
+            end
+        end
+    end
+
     // IO pass-through — bypass cache for memory-mapped peripherals
     logic is_cacheable;
     assign is_cacheable = !is_io;

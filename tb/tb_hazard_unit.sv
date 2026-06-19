@@ -2,6 +2,8 @@
 
 module tb_hazard_unit;
 
+    logic       clk;
+    logic       rst;
     logic       ex_mem_re;
     logic [4:0] ex_rd_addr;
     logic [4:0] id_rs1_addr, id_rs2_addr;
@@ -18,7 +20,12 @@ module tb_hazard_unit;
     logic trap;
     logic ex_mret;
 
+    initial clk = 0;
+    always #5 clk = ~clk;
+
     hazard_unit dut (
+        .clk                (clk),
+        .rst                (rst),
         .ex_mem_re          (ex_mem_re),
         .ex_rd_addr         (ex_rd_addr),
         .id_rs1_addr        (id_rs1_addr),
@@ -112,6 +119,9 @@ module tb_hazard_unit;
 
     initial begin
         $display("========== HAZARD UNIT TESTBENCH ==========");
+        rst = 1;
+        @(posedge clk); #1;
+        rst = 0;
 
         // cs=0 for all normal tests
         check(0, 0, 0, 0, 0, 5'd1, 5'd2, 5'd3, 0, 0, 0, 0, 0, 0, "no hazard");

@@ -7,6 +7,8 @@
 // Controls pipeline stalls and flushes
 
 module hazard_unit (
+    input  logic       clk,
+    input  logic       rst,
     // load-use hazard detection
     // need EX stage info to detect
     input  logic       ex_mem_re,       // is EX stage a load?
@@ -74,10 +76,12 @@ module hazard_unit (
     assign id_ex_flush = (load_use_hazard || control_hazard || icache_stall) && !any_stall;
     assign if_id_flush = control_hazard && !any_stall;
 
-    // SVA: load-use hazard must freeze both IF and ID stages
-    always_comb begin
-        assert (!load_use_hazard || if_id_stall)
-            else $error("SVA FAIL: load_use_hazard asserted but if_id_stall low");
+    // SVA: load-use hazard must freeze both IF and ID stages.
+    // Clocked + rst-guarded: avoids delta-cycle and X-propagation false positives.
+    always_ff @(posedge clk) begin
+        if (!rst)
+            assert (!load_use_hazard || if_id_stall)
+                else $error("SVA FAIL: load_use_hazard asserted but if_id_stall low");
     end
 
 

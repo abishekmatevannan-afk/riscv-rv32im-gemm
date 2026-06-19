@@ -984,6 +984,8 @@ module top_pipeline #(
     // =========================================================
 
     hazard_unit HU (
+        .clk                (clk),
+        .rst                (rst),
         .ex_mem_re          (ex_mem_re),
         .ex_rd_addr         (ex_rd_addr),
         .id_rs1_addr        (id_rs1_addr),
