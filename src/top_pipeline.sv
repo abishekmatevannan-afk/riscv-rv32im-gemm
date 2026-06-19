@@ -157,11 +157,11 @@ module top_pipeline #(
 
     // EXCEPTION AND CSR SIGNALS
     // =========================================================
-    logic        ex_illegal, ex_ecall, ex_mret;
+    logic        ex_illegal, ex_ecall, ex_ebreak, ex_mret;
     logic        ex_csr_we;
     logic [11:0] ex_csr_addr;
     logic [2:0]  ex_csr_funct3;
-    logic        id_illegal, id_ecall, id_mret;
+    logic        id_illegal, id_ecall, id_ebreak, id_mret;
     logic        id_csr_we;
     logic [11:0] id_csr_addr;
     logic [2:0]  id_csr_funct3;
@@ -673,6 +673,7 @@ module top_pipeline #(
         .imm_sel    (id_imm_sel),
         .illegal    (id_illegal),
         .ecall      (id_ecall),
+        .ebreak     (id_ebreak),
         .mret       (id_mret),
         .csr_we     (id_csr_we),
         .csr_addr   (id_csr_addr),
@@ -735,6 +736,7 @@ module top_pipeline #(
         .id_opcode     (id_opcode),
         .id_illegal    (id_illegal),
         .id_ecall      (id_ecall),
+        .id_ebreak     (id_ebreak),
         .id_mret       (id_mret),
         .id_csr_we     (id_csr_we),
         .id_csr_addr   (id_csr_addr),
@@ -758,6 +760,7 @@ module top_pipeline #(
         .ex_opcode     (ex_opcode),
         .ex_illegal    (ex_illegal),
         .ex_ecall      (ex_ecall),
+        .ex_ebreak     (ex_ebreak),
         .ex_mret       (ex_mret),
         .ex_csr_we     (ex_csr_we),
         .ex_csr_addr   (ex_csr_addr),
@@ -1039,21 +1042,23 @@ module top_pipeline #(
     assign ext_irq = uart_irq;
 
     csr_regfile CSRS (
-        .clk        (clk),
-        .rst        (rst),
-        .csr_we     (ex_csr_we),
-        .csr_addr   (ex_csr_addr),
-        .csr_wd     (ex_fwd_a),
-        .csr_rd     (csr_rd),
-        .trap       (trap),
-        .trap_cause (trap_cause),
-        .trap_epc   (trap_epc),
-        .mret       (ex_mret),
-        .ext_irq    (ext_irq),
-        .mtvec_out  (mtvec_out),
-        .mepc_out   (mepc_out),
-        .mie_global (mie_global),
-        .meie       (meie)
+        .clk          (clk),
+        .rst          (rst),
+        .csr_we       (ex_csr_we),
+        .csr_addr     (ex_csr_addr),
+        .csr_wd       (ex_fwd_a),
+        .csr_funct3   (ex_csr_funct3),
+        .csr_rs1_addr (ex_rs1_addr),
+        .csr_rd       (csr_rd),
+        .trap         (trap),
+        .trap_cause   (trap_cause),
+        .trap_epc     (trap_epc),
+        .mret         (ex_mret),
+        .ext_irq      (ext_irq),
+        .mtvec_out    (mtvec_out),
+        .mepc_out     (mepc_out),
+        .mie_global   (mie_global),
+        .meie         (meie)
     );
 
     exception_unit EU (
@@ -1061,6 +1066,7 @@ module top_pipeline #(
         .ex_valid     (ex_valid),
         .ex_illegal   (ex_illegal),
         .ex_ecall     (ex_ecall),
+        .ex_ebreak    (ex_ebreak),
         .ex_mem_re    (ex_mem_re),
         .ex_mem_we    (ex_mem_we),
         .ex_funct3    (ex_funct3),

@@ -24,6 +24,8 @@ module csr_regfile (
     input  logic        csr_we,          // write enable
     input  logic [11:0] csr_addr,        // CSR address
     input  logic [31:0] csr_wd,          // write data
+    input  logic [2:0]  csr_funct3,      // 001=CSRRW 010=CSRRS 011=CSRRC (imm variants: 101/110/111)
+    input  logic [4:0]  csr_rs1_addr,    // rs1 register address (x0 suppresses write on CSRRS/CSRRC)
     output logic [31:0] csr_rd,          // read data
 
     // trap interface (from exception unit)
@@ -88,12 +90,38 @@ module csr_regfile (
         end else if (mret) begin
             mstatus <= mstatus | 32'h8;   // restore MIE on return
         end else if (csr_we) begin
+            // csr_funct3[1:0]: 01=RW, 10=RS(set), 11=RC(clear) — same for reg and imm variants
             case (csr_addr)
-                12'h300: mstatus <= csr_wd;
-                12'h304: mie_reg <= csr_wd;
-                12'h305: mtvec   <= csr_wd;
-                12'h341: mepc    <= csr_wd;
-                12'h342: mcause  <= csr_wd;
+                12'h300: case (csr_funct3[1:0])
+                             2'b01: mstatus <= csr_wd;
+                             2'b10: mstatus <= mstatus | csr_wd;
+                             2'b11: mstatus <= mstatus & ~csr_wd;
+                             default: ;
+                         endcase
+                12'h304: case (csr_funct3[1:0])
+                             2'b01: mie_reg <= csr_wd;
+                             2'b10: mie_reg <= mie_reg | csr_wd;
+                             2'b11: mie_reg <= mie_reg & ~csr_wd;
+                             default: ;
+                         endcase
+                12'h305: case (csr_funct3[1:0])
+                             2'b01: mtvec <= csr_wd;
+                             2'b10: mtvec <= mtvec | csr_wd;
+                             2'b11: mtvec <= mtvec & ~csr_wd;
+                             default: ;
+                         endcase
+                12'h341: case (csr_funct3[1:0])
+                             2'b01: mepc <= csr_wd;
+                             2'b10: mepc <= mepc | csr_wd;
+                             2'b11: mepc <= mepc & ~csr_wd;
+                             default: ;
+                         endcase
+                12'h342: case (csr_funct3[1:0])
+                             2'b01: mcause <= csr_wd;
+                             2'b10: mcause <= mcause | csr_wd;
+                             2'b11: mcause <= mcause & ~csr_wd;
+                             default: ;
+                         endcase
                 // mip is read-only, writes ignored
                 default: ;
             endcase

@@ -18,6 +18,7 @@ module control_unit (
     // exception outputs
     output logic        illegal,     // unrecognized or malformed instruction
     output logic        ecall,       // ECALL instruction
+    output logic        ebreak,      // EBREAK instruction (breakpoint, mcause=3)
     output logic        mret,        // MRET instruction
  
     // CSR outputs
@@ -48,6 +49,7 @@ module control_unit (
     localparam OP_LUI    = 7'b0110111;
     localparam OP_AUIPC  = 7'b0010111;
     localparam OP_SYSTEM = 7'b1110011;
+    localparam OP_FENCE  = 7'b0001111;  // FENCE / FENCE.I — treated as NOP
     localparam OP_CUSTOM = 7'b0001011;  // custom SIMD opcode
 
     // immediate format select encodings
@@ -94,6 +96,7 @@ module control_unit (
         imm_sel    = IMM_R;
         illegal    = 0;
         ecall      = 0;
+        ebreak     = 0;
         mret       = 0;
         csr_we     = 0;
         csr_addr   = 12'd0;
@@ -221,9 +224,9 @@ module control_unit (
                     3'b000: begin
                         // ECALL, EBREAK, MRET — distinguished by funct12
                         case (funct12)
-                            12'b000000000000: ecall = 1;   // ECALL
-                            12'b000000000001: ;             // EBREAK — NOP
-                            12'b001100000010: mret  = 1;   // MRET
+                            12'b000000000000: ecall  = 1;   // ECALL
+                            12'b000000000001: ebreak = 1;   // EBREAK — breakpoint exception
+                            12'b001100000010: mret   = 1;   // MRET
                             default:          illegal = 1;
                         endcase
                     end
@@ -244,6 +247,11 @@ module control_unit (
                 endcase
             end
             
+            // FENCE / FENCE.I: no-op (in-order single-core, no memory ordering needed)
+            OP_FENCE: begin
+                // all signals remain at safe defaults — no reg write, no mem, no branch
+            end
+
             // CUSTOM: SIMD operations
             OP_CUSTOM: begin
                 reg_we  = 1;

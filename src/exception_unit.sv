@@ -19,6 +19,7 @@ module exception_unit (
     input  logic        ex_valid,        // is there a real instruction in EX?
     input  logic        ex_illegal,      // control unit flagged illegal instruction
     input  logic        ex_ecall,        // ECALL instruction in EX
+    input  logic        ex_ebreak,       // EBREAK instruction in EX
     input  logic        ex_mem_re,       // load in EX
     input  logic        ex_mem_we,       // store in EX
     input  logic [2:0]  ex_funct3,       // access width for load/store
@@ -105,6 +106,10 @@ module exception_unit (
             end else if (ex_ecall) begin
                 trap       = 1;
                 trap_cause = 32'd11;        // ECALL from M-mode
+                trap_epc   = ex_pc;
+            end else if (ex_ebreak) begin
+                trap       = 1;
+                trap_cause = 32'd3;         // breakpoint
                 trap_epc   = ex_pc;
             end
         end

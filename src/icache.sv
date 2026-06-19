@@ -58,8 +58,7 @@ module icache (
 
     always_ff @(posedge clk) begin
         if (rst) begin
-            data_q      <= 32'd0;
-            fill_data_q <= 32'd0;
+            data_q <= 32'd0;
         end else if (!pc_stall_i) begin
             data_q <= data[pc_next_i[11:4]][pc_next_i[3:2]];
         end
@@ -112,6 +111,7 @@ module icache (
             mem_re       <= 0;
             mem_addr     <= 32'd0;
             request_miss <= 0;
+            fill_data_q  <= 32'd0;
             for (i = 0; i < NUM_LINES; i++) begin
                 valid[i] <= 0;
                 tags[i]  <= '0;

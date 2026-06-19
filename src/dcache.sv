@@ -94,7 +94,6 @@ module dcache (
     always_ff @(posedge clk) begin
         if (rst) begin
             cached_word_q <= 32'd0;
-            fill_wd_q     <= 32'd0;
         end else if (!ex_stall_i) begin
             if (cpu_we && hit && !is_io &&
                 ex_addr_i[11:4] == addr_idx && ex_addr_i[3:2] == word_off) begin
@@ -227,6 +226,7 @@ module dcache (
             state      <= IDLE;
             fill_wait  <= 0;
             fill_word  <= 0;
+            fill_wd_q  <= 32'd0;
             mem_we     <= 0;
             mem_re     <= 0;
             mem_addr   <= 32'd0;

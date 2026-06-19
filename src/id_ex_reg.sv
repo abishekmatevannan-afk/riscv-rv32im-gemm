@@ -69,6 +69,8 @@ module id_ex_reg (
     output logic        ex_illegal,
     input  logic        id_ecall,
     output logic        ex_ecall,
+    input  logic        id_ebreak,
+    output logic        ex_ebreak,
     input  logic        id_mret,
     output logic        ex_mret,
  
@@ -107,6 +109,7 @@ module id_ex_reg (
             ex_valid         <= 0;
             ex_illegal       <= 0;
             ex_ecall         <= 0;
+            ex_ebreak        <= 0;
             ex_mret          <= 0;
             ex_csr_we        <= 0;
             ex_csr_addr      <= 12'd0;
@@ -136,6 +139,7 @@ module id_ex_reg (
             ex_valid         <= id_valid;
             ex_illegal       <= id_illegal;
             ex_ecall         <= id_ecall;
+            ex_ebreak        <= id_ebreak;
             ex_mret          <= id_mret;
             ex_csr_we        <= id_csr_we;
             ex_csr_addr      <= id_csr_addr;
