@@ -61,6 +61,27 @@ The following figures are **extrapolated estimates**, not place-and-route result
 
 These ranges would only be confirmed by running Vivado synthesis + place-and-route with `(* ram_style = "block" *)` attributes on the cache arrays. The open-source flow cannot produce a valid timing report without BRAM inference.
 
+## Vivado BRAM Inference — Investigation and Findings
+
+**What was attempted:** Targeted Artix-7 (`xc7a35tcpg236-1`, then `xc7a100tcsg324-1`) through Vivado to get a real post-place-and-route Fmax, replacing the Yosys-based estimate above.
+
+**What was found:** Despite `(* ram_style = "block" *)` attributes already present on the cache and SRAM storage arrays, Vivado could not map `dcache.sv`/`icache.sv` to true Block RAM. The root cause: both caches read their storage arrays combinationally (`assign cached_word = data[addr_idx][word_off];`), resolving hit, the tag comparison, and the data output all within a single cycle. Real Block RAM is an inherently synchronous primitive — no Xilinx (or any vendor) BRAM tile supports a true zero-latency read. Vivado silently fell back to flip-flop-based storage plus large LUT-based multiplexer trees to emulate the combinational access pattern.
+
+This showed up concretely in implementation:
+
+- **On xc7a35t:** FDRE over-utilized — 81,978 flip-flops required vs. 65,518 available
+- **On xc7a100t:** LUT as Logic over-utilized — 128,921 LUTs required vs. 63,400 available, nearly 2× over even on the larger device
+
+Retargeting to a bigger device did not fix this, since the LUT cost was coming from the multiplexer trees needed to fake combinational access to a 256-line array, not just raw storage bit count. A bigger device would have masked the symptom without addressing the underlying architectural mismatch between the cache's idealized timing model and how real BRAM behaves.
+
+**The correct fix:** Pipeline the cache reads using a one-cycle-ahead prefetch scheme — index the storage array using the pre-register address (the combinational "next PC" value for icache, the combinational pre-EX/MEM ALU result for dcache) one cycle before it's needed, so the registered lookup result is ready exactly when the corresponding address itself becomes registered. Done correctly, this adds zero stall cycles on a cache hit, since the BRAM's one-cycle latency is hidden behind work the pipeline is already doing.
+
+**Why it isn't merged:** This was prototyped on a separate branch (`bram-prefetch-reads`). It passed both cache unit tests (`tb_icache`, `tb_dcache`) standalone, but broke a real correctness case in pipeline integration — LHU (load halfword unsigned) returned `0x00000000` instead of the correct value during the matmul benchmark, and the hazard-unit assertion (`load_use_hazard` asserted but `if_id_stall` low) fired on nearly every cycle of execution. The prefetch timing interacted with the existing load-use hazard detection logic in a way that wasn't caught until full pipeline simulation. Cycle counts also regressed (Parallel MAC 69→79, Systolic 77→87 cycles), indicating the "zero added latency" property didn't hold as designed.
+
+Given the proximity to internship application deadlines, this was reverted rather than debugged further under time pressure. The branch remains available in the repository as a record of the investigation, the root-cause analysis, and the attempted fix, but main retains the original combinational-read cache design, which is correct and fully verified in simulation (33/33 tests passing) but does not currently map to real Block RAM on Xilinx 7-series parts.
+
+**Status:** Documented as a known follow-up rather than a blocking issue. The cache architecture is functionally correct and matches standard direct-mapped cache design; the gap is specifically in synthesizability of the read timing model for real BRAM primitives, not in cache correctness or pipeline integration as currently merged.
+
 ## Generic target (CMOS gate-level via ABC)
 
 | Resource       | Count   |
