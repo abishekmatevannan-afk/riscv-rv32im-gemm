@@ -80,9 +80,10 @@ test-all:
 			continue; \
 		fi; \
 		run_out=$$(vvp $(SIM_DIR)/$$mod.vvp 2>&1); \
-		if echo "$$run_out" | grep -qE "(^FAIL|^TIMEOUT| FAIL | FAIL$$|[1-9][0-9]* failed)"; then \
+		vvp_exit=$$?; \
+		if [ $$vvp_exit -ne 0 ] || echo "$$run_out" | grep -qE "(^FAIL|^TIMEOUT| FAIL | FAIL$$|[1-9][0-9]* failed|Program not runnable|is not defined by any module)"; then \
 			echo "FAIL"; \
-			echo "$$run_out" | grep -E "(FAIL|TIMEOUT|error|Error)" | head -5 | sed 's/^/    /'; \
+			echo "$$run_out" | grep -E "(FAIL|TIMEOUT|error|Error|not runnable|not defined)" | head -5 | sed 's/^/    /'; \
 			fail=$$((fail + 1)); \
 		else \
 			echo "pass"; \

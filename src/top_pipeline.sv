@@ -1074,15 +1074,32 @@ module top_pipeline #(
     // SVA: AXI4-Lite awvalid must remain asserted until awready (protocol compliance)
     // |=> expressed as: if awvalid was high and awready was low last cycle,
     // awvalid must still be high this cycle.
+    // Shadow registers replace $past() — Icarus Verilog does not implement $past().
+    logic prev_dc_m_awvalid, prev_dc_m_awready;
+    logic prev_io_m_awvalid, prev_io_m_awready;
+    logic prev_sy_m_awvalid, prev_sy_m_awready;
+    logic prev_ac_m_awvalid, prev_ac_m_awready;
+
+    always_ff @(posedge clk) begin
+        prev_dc_m_awvalid <= dc_m_awvalid;
+        prev_dc_m_awready <= dc_m_awready;
+        prev_io_m_awvalid <= io_m_awvalid;
+        prev_io_m_awready <= io_m_awready;
+        prev_sy_m_awvalid <= sy_m_awvalid;
+        prev_sy_m_awready <= sy_m_awready;
+        prev_ac_m_awvalid <= ac_m_awvalid;
+        prev_ac_m_awready <= ac_m_awready;
+    end
+
     always_ff @(posedge clk) begin
         if (!rst) begin
-            assert (!($past(dc_m_awvalid) && !$past(dc_m_awready)) || dc_m_awvalid)
+            assert (!(prev_dc_m_awvalid && !prev_dc_m_awready) || dc_m_awvalid)
                 else $error("SVA FAIL: dc_m_awvalid dropped before dc_m_awready");
-            assert (!($past(io_m_awvalid) && !$past(io_m_awready)) || io_m_awvalid)
+            assert (!(prev_io_m_awvalid && !prev_io_m_awready) || io_m_awvalid)
                 else $error("SVA FAIL: io_m_awvalid dropped before io_m_awready");
-            assert (!($past(sy_m_awvalid) && !$past(sy_m_awready)) || sy_m_awvalid)
+            assert (!(prev_sy_m_awvalid && !prev_sy_m_awready) || sy_m_awvalid)
                 else $error("SVA FAIL: sy_m_awvalid dropped before sy_m_awready");
-            assert (!($past(ac_m_awvalid) && !$past(ac_m_awready)) || ac_m_awvalid)
+            assert (!(prev_ac_m_awvalid && !prev_ac_m_awready) || ac_m_awvalid)
                 else $error("SVA FAIL: ac_m_awvalid dropped before ac_m_awready");
         end
     end
