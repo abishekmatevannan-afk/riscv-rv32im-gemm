@@ -13,14 +13,20 @@ module dcache (
     // CPU interface (from MEM stage)
     input  logic        cpu_we,          // write enable from CPU
     input  logic        cpu_re,          // read enable from CPU
-    input  logic [31:0] cpu_addr,        // byte address from CPU
+    input  logic [31:0] cpu_addr,        // byte address from CPU (= registered EX result)
     input  logic [31:0] cpu_wd,          // write data from CPU
     input  logic [2:0]  cpu_funct3,      // access width
     output logic [31:0] cpu_rd,          // read data to CPU
     output logic        cache_stall,     // stall pipeline on miss
     output logic        cache_hit,       // high on hit (for PMU)
     output logic        cache_miss,      // high on miss (for PMU)
- 
+
+    // Prefetch address — the combinational EX ALU result before it is captured
+    // in the EX/MEM register.  Driving BRAM one cycle early hides its latency
+    // so hits have zero added stall cycles.
+    input  logic [31:0] ex_addr_i,
+    input  logic        ex_stall_i,      // when 1 EX/MEM won't advance; hold cached_word_q
+
     // Memory interface (to data_memory)
     output logic        mem_we,
     output logic        mem_re,
@@ -39,10 +45,31 @@ module dcache (
     localparam OFF_WIDTH  = 4;
  
     // cache storage
-    (* ram_style = "block" *) logic                valid [NUM_LINES-1:0];
-    (* ram_style = "block" *) logic                dirty [NUM_LINES-1:0];
-    (* ram_style = "block" *) logic [TAG_WIDTH-1:0] tags [NUM_LINES-1:0];
-    (* ram_style = "block" *) logic [31:0]          data [NUM_LINES-1:0][LINE_WORDS-1:0];
+    // valid/dirty/tags: distributed RAM — supports combinational reads for hit
+    //   detection and dirty-eviction checks inside always_ff.
+    // data: block RAM — reads are registered via the cached_word_q prefetch path.
+    (* ram_style = "distributed" *) logic                valid [NUM_LINES-1:0];
+    (* ram_style = "distributed" *) logic                dirty [NUM_LINES-1:0];
+    (* ram_style = "distributed" *) logic [TAG_WIDTH-1:0] tags [NUM_LINES-1:0];
+    (* ram_style = "block" *)       logic [31:0]          data [NUM_LINES-1:0][LINE_WORDS-1:0];
+
+    // Registered read of data[] — driven one cycle ahead by ex_addr_i so the
+    // result is ready when cpu_addr == ex_addr_i (i.e. the next MEM cycle).
+    // Frozen (held) whenever ex_stall_i=1.
+    logic [31:0] cached_word_q;
+
+    // Word captured from mem_rd during the fill cycle that fills word_off.
+    // Used as cpu_rd in the DONE state so there is no combinational BRAM read.
+    logic [31:0] fill_wd_q;
+
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            cached_word_q <= 32'd0;
+            fill_wd_q     <= 32'd0;
+        end else if (!ex_stall_i) begin
+            cached_word_q <= data[ex_addr_i[11:4]][ex_addr_i[3:2]];
+        end
+    end
  
     // ADDRESS BREAKDOWN
     // All bit-selects on cpu_addr are done here as named wires
@@ -102,7 +129,7 @@ module dcache (
     // =========================================================
  
     logic [31:0] cached_word;
-    assign cached_word = data[addr_idx][word_off];
+    assign cached_word = cached_word_q;  // registered prefetch; see always_ff above
  
     // signed byte reads
     logic [31:0] lb_00, lb_01, lb_10, lb_11;
@@ -149,8 +176,8 @@ module dcache (
     end
  
     assign cpu_rd = is_io                          ? mem_rd  :
+                    (state == DONE)                ? fill_wd_q :
                     (hit && (cpu_re || !cpu_we))   ? hit_rd  :
-                    (state == DONE)                ? hit_rd  :
                                                      32'd0;
  
     // =========================================================
@@ -263,7 +290,9 @@ module dcache (
                     end else begin
                         // subsequent cycles: latch incoming word
                         data[addr_idx][fill_word] <= mem_rd;
- 
+                        if (fill_word == word_off)
+                            fill_wd_q <= mem_rd;  // save the word cpu_addr needs
+
                         if (fill_word == 2'b11) begin
                             valid[addr_idx] <= 1;
                             tags[addr_idx]  <= addr_tag;

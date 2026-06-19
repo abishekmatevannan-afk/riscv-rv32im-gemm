@@ -13,6 +13,12 @@ module tb_dcache;
     logic [2:0]  mem_funct3;
     logic        is_io;
 
+    // Prefetch port wires — testbench drives same-cycle address (conservative)
+    logic [31:0] ex_addr_tb;
+    logic        ex_stall_tb;
+    assign ex_addr_tb  = cpu_addr;
+    assign ex_stall_tb = cache_stall;
+
     // fake backing memory for testbench
     logic [31:0] backing_mem [0:65535];  // 256KB / 4 = 65536 words
 
@@ -28,6 +34,8 @@ module tb_dcache;
         .cache_stall (cache_stall),
         .cache_hit   (cache_hit),
         .cache_miss  (cache_miss),
+        .ex_addr_i   (ex_addr_tb),
+        .ex_stall_i  (ex_stall_tb),
         .mem_we      (mem_we),
         .mem_re      (mem_re),
         .mem_addr    (mem_addr),
