@@ -203,6 +203,32 @@ module dcache (
                     (state == DONE)                ? fill_wd_q :
                     (hit && (cpu_re || !cpu_we))   ? hit_rd  :
                                                      32'd0;
+
+    // Full-word merge for write-hit: start from the registered prefetch value
+    // (which holds data[store_addr] as of the previous cycle — the old word),
+    // overwrite the appropriate byte(s), then write the complete word back.
+    // This produces a static full-word write to data[], enabling BRAM inference.
+    logic [31:0] write_merge;
+    always_comb begin
+        write_merge = cached_word_q;
+        case (cpu_funct3)
+            3'b000: begin // SB — overwrite one byte
+                case (byte_off)
+                    2'b00: write_merge[7:0]   = cpu_wd[7:0];
+                    2'b01: write_merge[15:8]  = cpu_wd[7:0];
+                    2'b10: write_merge[23:16] = cpu_wd[7:0];
+                    2'b11: write_merge[31:24] = cpu_wd[7:0];
+                endcase
+            end
+            3'b001: begin // SH — overwrite two bytes
+                if (!byte_off_hi)
+                    write_merge[15:0]  = cpu_wd[15:0];
+                else
+                    write_merge[31:16] = cpu_wd[15:0];
+            end
+            default: write_merge = cpu_wd; // SW — replace full word
+        endcase
+    end
  
     // =========================================================
     // PMU SIGNALS
@@ -266,25 +292,9 @@ module dcache (
  
                     end else if (cpu_we && hit) begin
                         // write hit — update cache, mark dirty
-                        dirty[addr_idx] <= 1;
-                        case (cpu_funct3)
-                            3'b000: begin // SB — uses byte_off (was addr_off[1:0])
-                                case (byte_off)
-                                    2'b00: data[addr_idx][word_off][7:0]   <= cpu_wd[7:0];
-                                    2'b01: data[addr_idx][word_off][15:8]  <= cpu_wd[7:0];
-                                    2'b10: data[addr_idx][word_off][23:16] <= cpu_wd[7:0];
-                                    2'b11: data[addr_idx][word_off][31:24] <= cpu_wd[7:0];
-                                endcase
-                            end
-                            3'b001: begin // SH — uses byte_off_hi (was addr_off[1])
-                                case (byte_off_hi)
-                                    1'b0: data[addr_idx][word_off][15:0]  <= cpu_wd[15:0];
-                                    1'b1: data[addr_idx][word_off][31:16] <= cpu_wd[15:0];
-                                endcase
-                            end
-                            3'b010:  data[addr_idx][word_off] <= cpu_wd; // SW
-                            default: data[addr_idx][word_off] <= cpu_wd;
-                        endcase
+                        // write_merge is the full merged word; full-word write enables BRAM inference
+                        dirty[addr_idx]          <= 1;
+                        data[addr_idx][word_off] <= write_merge;
                     end
                 end
  

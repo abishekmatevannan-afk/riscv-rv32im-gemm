@@ -84,6 +84,7 @@ module tb_top_pipeline;
         check2(5'd6,  32'd0,        "XOR same = 0");
         check2(5'd7,  32'd255,      "OR 0xF0|0x0F");
         check2(5'd8,  32'd100,      "AND result");
+        check2(5'd11, 32'h045600AB, "SB then SH same-word chaining");
 
         $display("\n========== DONE ==========");
         $display("REGS x11=%08h x12=%08h x21=%08h x4=%08h", cpu2.RF.regs[11], cpu2.RF.regs[12], cpu2.RF.regs[21], cpu2.RF.regs[4]);

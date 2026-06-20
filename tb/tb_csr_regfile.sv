@@ -5,8 +5,7 @@ module tb_csr_regfile;
     logic        clk, rst;
     logic        csr_we;
     logic [11:0] csr_addr;
-    logic [2:0]  csr_funct3;
-    logic [4:0]  csr_rs1_addr;
+    logic [1:0]  csr_funct3;
     logic [31:0] csr_wd, csr_rd;
     logic        trap, mret;
     logic [31:0] trap_cause, trap_epc;
@@ -21,7 +20,6 @@ module tb_csr_regfile;
         .csr_addr     (csr_addr),
         .csr_wd       (csr_wd),
         .csr_funct3   (csr_funct3),
-        .csr_rs1_addr (csr_rs1_addr),
         .csr_rd       (csr_rd),
         .trap         (trap),
         .trap_cause   (trap_cause),
@@ -42,19 +40,19 @@ module tb_csr_regfile;
     initial clk = 0;
     always #5 clk = ~clk;
 
-    // CSRRW (funct3=001, rs1_addr=nonzero)
+    // CSRRW (funct3=01)
     task automatic csr_write(input [11:0] a, input [31:0] d);
         @(posedge clk); #1;
-        csr_we = 1; csr_addr = a; csr_wd = d; csr_funct3 = 3'b001; csr_rs1_addr = 5'd1;
+        csr_we = 1; csr_addr = a; csr_wd = d; csr_funct3 = 2'b01;
         @(posedge clk); #1;
         csr_we = 0;
     endtask
 
-    // Generic CSR operation: funct3 selects RW/RS/RC, rs1 controls write-suppress on RS/RC
+    // Generic CSR operation: f3[1:0] selects RW/RS/RC, rs1 controls write-suppress on RS/RC
     task automatic csr_op(input [11:0] a, input [31:0] d, input [2:0] f3, input [4:0] rs1);
         @(posedge clk); #1;
         csr_we = (f3 == 3'b001 || f3 == 3'b101) ? 1'b1 : (rs1 != 5'd0);
-        csr_addr = a; csr_wd = d; csr_funct3 = f3; csr_rs1_addr = rs1;
+        csr_addr = a; csr_wd = d; csr_funct3 = f3[1:0];
         @(posedge clk); #1;
         csr_we = 0;
     endtask
@@ -72,7 +70,7 @@ module tb_csr_regfile;
 
         rst = 1; csr_we = 0; trap = 0; mret = 0;
         ext_irq = 0; csr_addr = 0; csr_wd = 0;
-        csr_funct3 = 3'b001; csr_rs1_addr = 5'd0;
+        csr_funct3 = 2'b01;
         trap_cause = 0; trap_epc = 0;
         repeat(3) @(posedge clk); #1;
         rst = 0;
