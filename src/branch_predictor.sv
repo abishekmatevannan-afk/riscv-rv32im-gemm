@@ -30,9 +30,9 @@ module branch_predictor (
     // 64-entry BTB: target address, valid flag, and tag
     // btb_tag stores PC[31:8] so aliased PCs (same index, different upper
     // bits) do not borrow each other's predictions
-    logic [31:0] btb      [0:63];
-    logic        btb_valid[0:63];
-    logic [23:0] btb_tag  [0:63]; // PC[31:8] of the branch that filled this entry
+    (* ram_style = "distributed" *) logic [31:0] btb      [0:63];
+                                    logic        btb_valid[0:63];
+    (* ram_style = "distributed" *) logic [23:0] btb_tag  [0:63]; // PC[31:8] of the branch that filled this entry
 
     // index into tables using PC[7:2] (6 bits → 64 entries)
     logic [5:0] if_index;
@@ -57,9 +57,7 @@ module branch_predictor (
         if (rst) begin
             for (i = 0; i < 64; i++) begin
                 bht[i]       <= 2'b01;
-                btb[i]       <= 32'd0;
                 btb_valid[i] <= 1'b0;
-                btb_tag[i]   <= 24'd0;
             end
         end else if (ex_branch) begin
 

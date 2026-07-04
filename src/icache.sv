@@ -42,7 +42,7 @@ module icache (
 
     (* ram_style = "distributed" *) logic                 valid [NUM_LINES-1:0];
     (* ram_style = "distributed" *) logic [TAG_WIDTH-1:0] tags  [NUM_LINES-1:0];
-    (* ram_style = "block" *)       logic [31:0]          data  [NUM_LINES-1:0][LINE_WORDS-1:0];
+    (* ram_style = "block" *)       logic [31:0]          data  [NUM_LINES*LINE_WORDS-1:0];
     logic                 request_miss;
 
     // Registered read of data[] — driven one cycle ahead by pc_next_i so
@@ -60,7 +60,7 @@ module icache (
         if (rst) begin
             data_q <= 32'd0;
         end else if (!pc_stall_i) begin
-            data_q <= data[pc_next_i[11:4]][pc_next_i[3:2]];
+            data_q <= data[{pc_next_i[11:4], pc_next_i[3:2]}];
         end
     end
 
@@ -90,6 +90,11 @@ module icache (
 
     integer i;
 
+    // Port A — write-only, no reset clause (required for Vivado BRAM inference)
+    always_ff @(posedge clk)
+        if (state == FILL && fill_wait)
+            data[{addr_idx, fill_word}] <= mem_rd;
+
     // instruction read mux
     // DONE: use fill_data_q (captured from mem_rd during fill at word_off)
     // hit:  use data_q (BRAM prefetch registered one cycle ahead via pc_next_i)
@@ -114,7 +119,6 @@ module icache (
             fill_data_q  <= 32'd0;
             for (i = 0; i < NUM_LINES; i++) begin
                 valid[i] <= 0;
-                tags[i]  <= '0;
             end
         end else if (flush) begin
             // branch correction: abandon partial fill, preserve cached lines
@@ -148,7 +152,7 @@ module icache (
                     end else begin
                         // instruction_memory is combinational:
                         // mem_addr from the previous cycle is now valid in mem_rd
-                        data[addr_idx][fill_word] <= mem_rd;
+                        // data[] write is in the dedicated Port A always_ff above
                         if (fill_word == word_off)
                             fill_data_q <= mem_rd;  // save the word cpu_addr needs
 

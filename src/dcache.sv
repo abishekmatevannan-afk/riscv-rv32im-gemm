@@ -51,7 +51,7 @@ module dcache (
     (* ram_style = "distributed" *) logic                valid [NUM_LINES-1:0];
     (* ram_style = "distributed" *) logic                dirty [NUM_LINES-1:0];
     (* ram_style = "distributed" *) logic [TAG_WIDTH-1:0] tags [NUM_LINES-1:0];
-    (* ram_style = "block" *)       logic [31:0]          data [NUM_LINES-1:0][LINE_WORDS-1:0];
+    (* ram_style = "block" *)       logic [31:0]          data [NUM_LINES*LINE_WORDS-1:0];
 
     // Registered BRAM-prefetch read of data[]; see always_ff after hit detection.
     logic [31:0] cached_word_q;
@@ -81,70 +81,105 @@ module dcache (
     assign byte_off_hi = cpu_addr[1];
     assign byte_off_lo = cpu_addr[0];
  
+    // FSM state machine declarations — placed before the prefetch always_ff
+    // so that Icarus Verilog can resolve forward references.
+    typedef enum logic [2:0] {
+        IDLE      = 3'd0,
+        WB_PREP   = 3'd1,
+        WRITEBACK = 3'd2,
+        FILL      = 3'd3,
+        DONE      = 3'd4
+    } state_t;
+
+    state_t      state;
+    logic [1:0]  fill_word;   // tracks which word we are fetching/writing
+    logic [31:0] wb_addr;     // writeback address
+    logic        fill_wait;   // one cycle wait for memory to respond
+    logic [9:0]  portA_addr;  // write address mux
+    logic [9:0]  portB_addr;  // read address mux
+    logic        pending_store; // pending cpu_we store after FILL
+    logic [31:0] write_merge;   // full merged word for write-hit (see always_comb below)
+
+    integer i;
+
     // hit detection
     logic hit;
     assign hit = valid[addr_idx] && (tags[addr_idx] == addr_tag);
 
-    // Prefetch always_ff — placed here so addr_idx, word_off, byte_off_hi, hit
-    // are all in scope (Icarus Verilog requires declaration before use).
-    // Write-hit forwarding: when the MEM-stage write-hit and the EX-stage
-    // prefetch target the same cache word, both the non-blocking write to data[]
-    // and this non-blocking read fire at the same posedge — the read would see
-    // the pre-posedge (stale) value.  Detect and forward instead.
+    // Port B address: dirty-line readahead during WB_PREP/WRITEBACK, normal prefetch otherwise.
+    // During WB_PREP read current fill_word; during WRITEBACK read fill_word+1 so the result
+    // arrives in cached_word_q one cycle ahead of when mem_wd needs it.
+    always_comb begin
+        if (state == WB_PREP)
+            portB_addr = {addr_idx, fill_word};
+        else if (state == WRITEBACK)
+            portB_addr = {addr_idx, fill_word + 2'd1};
+        else
+            portB_addr = {ex_addr_i[11:4], ex_addr_i[3:2]};
+    end
+
+    // Port B (prefetch / WB readback) — placed here so addr_idx, word_off,
+    // byte_off_hi, hit are all in scope (Icarus Verilog requires decl before use).
+    // In WB_PREP/WRITEBACK the pipeline is stalled; repurpose Port B to read
+    // the dirty line into cached_word_q so WRITEBACK can drive mem_wd from it.
+    // In normal operation: write-hit forwarding merges the new byte(s) with the
+    // registered old word so the prefetch result is immediately coherent.
     always_ff @(posedge clk) begin
         if (rst) begin
             cached_word_q <= 32'd0;
+        end else if (state == WB_PREP || state == WRITEBACK) begin
+            cached_word_q <= data[portB_addr];
         end else if (!ex_stall_i) begin
             if (cpu_we && hit && !is_io &&
                 ex_addr_i[11:4] == addr_idx && ex_addr_i[3:2] == word_off) begin
                 case (cpu_funct3)
                     3'b000: begin // SB — one byte changes; merge with old word
                         case (byte_off)
-                            2'b00: cached_word_q <= {data[ex_addr_i[11:4]][ex_addr_i[3:2]][31: 8], cpu_wd[7:0]};
-                            2'b01: cached_word_q <= {data[ex_addr_i[11:4]][ex_addr_i[3:2]][31:16], cpu_wd[7:0], data[ex_addr_i[11:4]][ex_addr_i[3:2]][ 7:0]};
-                            2'b10: cached_word_q <= {data[ex_addr_i[11:4]][ex_addr_i[3:2]][31:24], cpu_wd[7:0], data[ex_addr_i[11:4]][ex_addr_i[3:2]][15:0]};
-                            2'b11: cached_word_q <= {cpu_wd[7:0], data[ex_addr_i[11:4]][ex_addr_i[3:2]][23:0]};
+                            2'b00: cached_word_q <= {data[portB_addr][31: 8], cpu_wd[7:0]};
+                            2'b01: cached_word_q <= {data[portB_addr][31:16], cpu_wd[7:0], data[portB_addr][ 7:0]};
+                            2'b10: cached_word_q <= {data[portB_addr][31:24], cpu_wd[7:0], data[portB_addr][15:0]};
+                            2'b11: cached_word_q <= {cpu_wd[7:0], data[portB_addr][23:0]};
                         endcase
                     end
                     3'b001: begin // SH — two bytes change; merge with old word
                         if (!byte_off_hi)
-                            cached_word_q <= {data[ex_addr_i[11:4]][ex_addr_i[3:2]][31:16], cpu_wd[15:0]};
+                            cached_word_q <= {data[portB_addr][31:16], cpu_wd[15:0]};
                         else
-                            cached_word_q <= {cpu_wd[15:0], data[ex_addr_i[11:4]][ex_addr_i[3:2]][15:0]};
+                            cached_word_q <= {cpu_wd[15:0], data[portB_addr][15:0]};
                     end
                     default: cached_word_q <= cpu_wd; // SW — entire word replaced
                 endcase
             end else begin
-                cached_word_q <= data[ex_addr_i[11:4]][ex_addr_i[3:2]];
+                cached_word_q <= data[portB_addr];
             end
         end
+    end
+
+    // Port A address: word_off in IDLE/DONE (write-hit and pending-store paths),
+    // fill_word in FILL (line-fill path). WB_PREP/WRITEBACK never write data[].
+    always_comb begin
+        case (state)
+            IDLE, DONE: portA_addr = {addr_idx, word_off};
+            default:    portA_addr = {addr_idx, fill_word};
+        endcase
+    end
+
+    // Port A — write-only, no reset clause (required for Vivado BRAM inference).
+    always_ff @(posedge clk) begin
+        case (state)
+            IDLE: if (cpu_we && hit && !is_io)
+                      data[portA_addr] <= write_merge;
+            FILL: if (fill_wait)
+                      data[portA_addr] <= mem_rd;
+            DONE: if (pending_store)
+                      data[portA_addr] <= cpu_wd;
+            default: ;
+        endcase
     end
 
     // IO pass-through — bypass cache for memory-mapped peripherals
     logic is_cacheable;
     assign is_cacheable = !is_io;
- 
- 
-    // FSM
-    typedef enum logic [1:0] {
-        IDLE      = 2'b00,
-        WRITEBACK = 2'b01,
-        FILL      = 2'b10,
-        DONE      = 2'b11
-    } state_t;
- 
-    state_t state;
- 
-    // fill word counter — tracks which word we are fetching/writing
-    logic [1:0] fill_word;
- 
-    // writeback address
-    logic [31:0] wb_addr;
- 
-    // one cycle wait for memory to respond
-    logic fill_wait;
- 
-    integer i;
  
     // =========================================================
     // INTERMEDIATE READ DATA SIGNALS
@@ -207,8 +242,6 @@ module dcache (
     // Full-word merge for write-hit: start from the registered prefetch value
     // (which holds data[store_addr] as of the previous cycle — the old word),
     // overwrite the appropriate byte(s), then write the complete word back.
-    // This produces a static full-word write to data[], enabling BRAM inference.
-    logic [31:0] write_merge;
     always_comb begin
         write_merge = cached_word_q;
         case (cpu_funct3)
@@ -236,9 +269,10 @@ module dcache (
  
     assign cache_hit   = is_cacheable && (cpu_re || cpu_we) &&  hit && (state == IDLE);
     assign cache_miss  = is_cacheable && (cpu_re || cpu_we) && !hit && (state == IDLE);
-    assign cache_stall = is_cacheable && (cpu_re || cpu_we) && 
-                     ((!hit && state == IDLE) || 
-                      state == WRITEBACK       || 
+    assign cache_stall = is_cacheable && (cpu_re || cpu_we) &&
+                     ((!hit && state == IDLE) ||
+                      state == WB_PREP        ||
+                      state == WRITEBACK      ||
                       state == FILL);
     // =========================================================
     // FSM — MISS HANDLING
@@ -249,19 +283,19 @@ module dcache (
  
     always_ff @(posedge clk) begin
         if (rst) begin
-            state      <= IDLE;
-            fill_wait  <= 0;
-            fill_word  <= 0;
-            fill_wd_q  <= 32'd0;
-            mem_we     <= 0;
-            mem_re     <= 0;
-            mem_addr   <= 32'd0;
-            mem_wd     <= 32'd0;
-            mem_funct3 <= 3'b000;
+            state         <= IDLE;
+            fill_wait     <= 0;
+            fill_word     <= 0;
+            fill_wd_q     <= 32'd0;
+            mem_we        <= 0;
+            mem_re        <= 0;
+            mem_addr      <= 32'd0;
+            mem_wd        <= 32'd0;
+            mem_funct3    <= 3'b000;
+            pending_store <= 0;
             for (i = 0; i < NUM_LINES; i++) begin
                 valid[i] <= 0;
                 dirty[i] <= 0;
-                tags[i]  <= '0;
             end
         end else begin
             mem_we <= 0;
@@ -283,27 +317,32 @@ module dcache (
                         fill_word <= 0;
                         if (valid[addr_idx] && dirty[addr_idx]) begin
                             // dirty line — writeback before fill
+                            // WB_PREP (1 cycle) lets Port B pre-read dirty word 0
                             wb_addr <= {tags[addr_idx], addr_idx, 4'd0};
-                            state   <= WRITEBACK;
+                            state   <= WB_PREP;
                         end else begin
                             // clean or invalid — go straight to fill
                             state <= FILL;
                         end
  
                     end else if (cpu_we && hit) begin
-                        // write hit — update cache, mark dirty
-                        // write_merge is the full merged word; full-word write enables BRAM inference
-                        dirty[addr_idx]          <= 1;
-                        data[addr_idx][word_off] <= write_merge;
+                        // write hit — mark dirty; data[] write is in Port A always_ff
+                        dirty[addr_idx] <= 1;
                     end
                 end
- 
+
+                WB_PREP: begin
+                    // Port B reads {addr_idx, fill_word=0} this cycle.
+                    // cached_word_q = dirty word 0 on the next posedge.
+                    state <= WRITEBACK;
+                end
+
                 WRITEBACK: begin
-                    // write back one word per cycle
+                    // write back using cached_word_q (Port B read-ahead output)
                     mem_we     <= 1;
-                    mem_addr <= {wb_addr[31:4], fill_word, 2'b00};
-                    mem_wd     <= data[addr_idx][fill_word];
-                    mem_funct3 <= 3'b010; // always write full words
+                    mem_addr   <= {wb_addr[31:4], fill_word, 2'b00};
+                    mem_wd     <= cached_word_q;
+                    mem_funct3 <= 3'b010;
  
                     if (fill_word == 2'b11) begin
                         fill_word       <= 0;
@@ -324,7 +363,7 @@ module dcache (
                         fill_wait <= 1;
                     end else begin
                         // subsequent cycles: latch incoming word
-                        data[addr_idx][fill_word] <= mem_rd;
+                        // data[] write is in the dedicated Port A always_ff
                         if (fill_word == word_off)
                             fill_wd_q <= mem_rd;  // save the word cpu_addr needs
 
@@ -335,10 +374,10 @@ module dcache (
                             fill_wait       <= 0;
  
                             if (cpu_we) begin
-                                dirty[addr_idx]          <= 1;
-                                data[addr_idx][word_off] <= cpu_wd;
+                                dirty[addr_idx] <= 1;
+                                pending_store   <= 1;  // Port A writes cpu_wd in DONE
                             end
- 
+
                             state <= DONE;
                         end else begin
                             fill_word <= fill_word + 1;
@@ -347,8 +386,9 @@ module dcache (
                 end
  
                 DONE: begin
-                    // one cycle to let data propagate to cpu_rd
-                    state <= IDLE;
+                    // one cycle to let data propagate to cpu_rd; Port A writes pending store
+                    pending_store <= 0;
+                    state         <= IDLE;
                 end
  
             endcase
