@@ -16,6 +16,7 @@ module tb_hazard_unit;
     logic       branch_mispredict;
     logic       cache_stall;
     logic       div_busy;
+    logic       simd_stall;
     logic       icache_stall;
     logic trap;
     logic ex_mret;
@@ -38,6 +39,7 @@ module tb_hazard_unit;
         .ex_predict_taken   (ex_predict_taken),
         .cache_stall        (cache_stall),
         .div_busy           (div_busy),
+        .simd_stall         (simd_stall),
         .icache_stall       (icache_stall),
         .pc_stall           (pc_stall),
         .if_id_stall        (if_id_stall),
@@ -66,6 +68,7 @@ module tb_hazard_unit;
         ex_predict_taken    = 1'b0;
         cache_stall         = cs;
         div_busy            = 1'b0;
+        simd_stall          = 1'b0;
         icache_stall        = 1'b0;
         ex_rd_addr          = ex_rd;
         id_rs1_addr         = id_rs1;
@@ -106,8 +109,8 @@ module tb_hazard_unit;
         id_is_pmacc        = is_pmacc;
         ex_branch          = 0; ex_jump_mispredict = 0;
         branch_taken       = 0; ex_predict_taken   = 0;
-        cache_stall        = 0; div_busy           = 0;
-        icache_stall       = 0; trap               = 0; ex_mret = 0;
+        cache_stall        = 0; div_busy           = 0; simd_stall = 0;
+        icache_stall       = 0; trap               = 0; ex_mret    = 0;
 
         #10;
 

@@ -81,8 +81,11 @@ module top_pipeline #(
     logic [6:0]  ex_funct7;
 
     logic [31:0] simd_result;
+    logic [31:0] simd_result_q;
     logic        simd_valid;
     logic        is_simd;
+    logic        simd_busy;
+    logic        simd_stall;
     logic [31:0] muldiv_result;
     logic        is_muldiv;
     logic        div_busy;
@@ -172,7 +175,6 @@ module top_pipeline #(
     logic        mie_global, meie;
     logic        ext_irq;
     logic        ex_valid;
-    logic [31:0] wb_csr_rd;
     logic        uart_irq;
     logic        id_valid;
 
@@ -711,7 +713,6 @@ module top_pipeline #(
         .rd3 (id_acc_data)
     );
 
-    assign wb_csr_rd = csr_rd;
 
     id_ex_reg ID_EX (
         .clk           (clk),
@@ -847,12 +848,29 @@ module top_pipeline #(
         .valid   (simd_valid)
     );
 
+    always_ff @(posedge clk) begin
+    if (rst) simd_result_q <= 32'd0;
+    else if (simd_stall) simd_result_q <= simd_result;
+    end
+
+    // simd_busy is a register, not combinational.  assign simd_busy = is_simd
+    // would create an infinite stall: simd_busy=1 → any_stall=1 → id_ex_stall=1
+    // → ID/EX holds → is_simd stays 1 forever.  The register self-clears after
+    // one cycle, giving exactly one stall per SIMD instruction.
+    always_ff @(posedge clk) begin
+        if (rst) simd_busy <= 1'b0;
+        else if (!(cache_stall || div_busy))
+            simd_busy <= is_simd && !simd_busy;
+    end
+
+    assign simd_stall = is_simd && !simd_busy;
+
     logic ex_csr_re;
     assign ex_csr_re = (ex_csr_funct3 != 3'b000);
 
-    assign ex_result = is_simd   ? simd_result   :
-                       is_muldiv ? muldiv_result :
-                       ex_csr_re ? csr_rd        :
+    assign ex_result = is_simd   ? simd_result_q  :
+                       is_muldiv ? muldiv_result   :
+                       ex_csr_re ? csr_rd          :
                                    ex_alu_result;
 
     logic ex_alu_bit0;
@@ -936,7 +954,7 @@ module top_pipeline #(
         .cache_stall (cache_stall),
         .cache_hit   (cache_hit),
         .cache_miss  (cache_miss),
-        .ex_addr_i   (ex_result),
+        .ex_addr_i   (ex_alu_result),
         .ex_stall_i  (ex_mem_stall),
         .mem_we      (dmem_we),
         .mem_re      (dmem_re),
@@ -979,7 +997,7 @@ module top_pipeline #(
 
     assign wb_data = (wb_wb_sel == 2'b01) ? wb_read_data  :
                      (wb_wb_sel == 2'b10) ? wb_pc_plus4   :
-                     (wb_wb_sel == 2'b11) ? wb_csr_rd     :
+                     (wb_wb_sel == 2'b11) ? wb_alu_result :  // was wb_csr_rd, used registered value
                                              wb_alu_result;
 
 
@@ -1001,6 +1019,7 @@ module top_pipeline #(
         .ex_predict_taken   (ex_predict_taken),
         .cache_stall      (cache_stall),
         .div_busy         (div_busy),
+        .simd_stall       (simd_stall),
         .icache_stall     (icache_stall),
         .pc_stall         (pc_stall),
         .if_id_stall      (if_id_stall),

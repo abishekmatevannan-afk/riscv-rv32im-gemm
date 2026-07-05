@@ -26,6 +26,7 @@ module hazard_unit (
 
     input  logic       cache_stall,     // stall from dcache miss
     input  logic       div_busy,        // stall from multi-cycle divider
+    input  logic       simd_stall,      // 1-cycle stall when SIMD first enters EX
     input  logic       icache_stall,
 
     // pipeline control outputs
@@ -47,7 +48,7 @@ module hazard_unit (
     logic control_hazard;
     logic any_stall;          // cache miss or divider running
 
-    assign any_stall = cache_stall || div_busy;
+    assign any_stall = cache_stall || div_busy || simd_stall;
 
     // load-use hazard:
     // EX stage is a load AND its destination matches
