@@ -1053,7 +1053,7 @@ module top_pipeline #(
     );
 
     // instruction retired
-    assign instr_retired = wb_reg_we;
+    assign instr_retired = wb_reg_we && !mem_wb_stall;
 
     // is_io covers all 0xFFFF.... addresses including PMU.
     // is_perf narrows to the PMU sub-range (0xFFFF20xx).
