@@ -82,9 +82,10 @@ module top_pipeline #(
 
     logic [31:0] simd_result;
     logic [31:0] simd_result_q;
+    logic [31:0] simd_a_q, simd_b_q, simd_acc_q;
     logic        simd_valid;
     logic        is_simd;
-    logic        simd_busy;
+    logic [1:0]  simd_busy;
     logic        simd_stall;
     logic [31:0] muldiv_result;
     logic        is_muldiv;
@@ -838,10 +839,22 @@ module top_pipeline #(
         .busy   (div_busy)
     );
 
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            simd_a_q   <= 32'd0;
+            simd_b_q   <= 32'd0;
+            simd_acc_q <= 32'd0;
+        end else if (simd_stall) begin
+            simd_a_q   <= ex_fwd_a;
+            simd_b_q   <= ex_fwd_b;
+            simd_acc_q <= ex_fwd_acc;
+        end
+    end
+
     simd_alu SIMD (
-        .a       (ex_fwd_a),
-        .b       (ex_fwd_b),
-        .acc     (ex_fwd_acc),   // PMACC accumulator: forwarded rd value
+        .a       (simd_a_q),
+        .b       (simd_b_q),
+        .acc     (simd_acc_q),
         .funct3  (ex_funct3),
         .funct7  (ex_funct7),
         .result  (simd_result),
@@ -853,17 +866,23 @@ module top_pipeline #(
     else if (simd_stall) simd_result_q <= simd_result;
     end
 
-    // simd_busy is a register, not combinational.  assign simd_busy = is_simd
-    // would create an infinite stall: simd_busy=1 → any_stall=1 → id_ex_stall=1
-    // → ID/EX holds → is_simd stays 1 forever.  The register self-clears after
-    // one cycle, giving exactly one stall per SIMD instruction.
+    // 3-state machine: IDLE(0)→WAIT1(1)→WAIT2(2)→IDLE.
+    // IDLE+is_simd: stall=1, inputs capture at posedge WAIT1.
+    // WAIT1:        stall=1, result correct, result_q captures at posedge WAIT2.
+    // WAIT2:        stall=0, EX/MEM advances and captures result_q.
     always_ff @(posedge clk) begin
-        if (rst) simd_busy <= 1'b0;
-        else if (!(cache_stall || div_busy))
-            simd_busy <= is_simd && !simd_busy;
+        if (rst) simd_busy <= 2'd0;
+        else if (!(cache_stall || div_busy)) begin
+            case (simd_busy)
+                2'd0: simd_busy <= is_simd ? 2'd1 : 2'd0;
+                2'd1: simd_busy <= 2'd2;
+                2'd2: simd_busy <= 2'd0;
+                default: simd_busy <= 2'd0;
+            endcase
+        end
     end
 
-    assign simd_stall = is_simd && !simd_busy;
+    assign simd_stall = (simd_busy == 2'd1) || (simd_busy == 2'd0 && is_simd);
 
     logic ex_csr_re;
     assign ex_csr_re = (ex_csr_funct3 != 3'b000);
