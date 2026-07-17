@@ -82,14 +82,14 @@ module exception_unit (
             // bubble in EX — only interrupts can fire
             if (take_interrupt) begin
                 trap       = 1;
-                trap_cause = 32'h80000011;  // machine external interrupt
+                trap_cause = 32'h8000000B;  // machine external interrupt
                 trap_epc   = ex_pc;
             end
         end else begin
             // priority order
             if (take_interrupt) begin
                 trap       = 1;
-                trap_cause = 32'h80000011;
+                trap_cause = 32'h8000000B;
                 trap_epc   = ex_pc;
             end else if (ex_illegal) begin
                 trap       = 1;

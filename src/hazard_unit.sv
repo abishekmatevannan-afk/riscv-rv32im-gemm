@@ -1,8 +1,3 @@
-//old hazard_unit.sv code:
-    // Detects load-use hazards and branch/jump hazards
-    // Controls pipeline stalls and flushes
-   
-
 // Detects load-use hazards and branch/jump hazards
 // Controls pipeline stalls and flushes
 

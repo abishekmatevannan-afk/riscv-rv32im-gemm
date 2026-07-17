@@ -21,6 +21,7 @@ module tb_pmacc_pipeline;
     ) cpu (
         .clk        (clk),
         .rst        (rst),
+        .uart_rx_pin(1'b1),
         .uart_tx_pin()
     );
 
@@ -53,7 +54,7 @@ module tb_pmacc_pipeline;
     integer timeout;
 
     initial begin
-        $dumpfile("sim/tb_pmacc_pipeline.vcd");
+        $dumpfile("sim/pmacc_pipeline.vcd");
         $dumpvars(0, tb_pmacc_pipeline);
 
         pass_cnt = 0; fail_cnt = 0;

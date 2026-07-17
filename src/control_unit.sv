@@ -83,7 +83,7 @@ module control_unit (
     // CSRRSI: opcode=SYSTEM funct3=110
     // CSRRCI: opcode=SYSTEM funct3=111
  
-    always @* begin
+    always_comb begin
         // safe defaults
         reg_we     = 0;
         mem_we     = 0;

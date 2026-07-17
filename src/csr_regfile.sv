@@ -14,7 +14,7 @@
 //   4   load address misaligned
 //   6   store address misaligned
 //   11  environment call (ECALL)
-//   0x80000011  external interrupt (machine external interrupt)
+//   0x8000000B  external interrupt (machine external interrupt, code=11)
 
 module csr_regfile (
     input  logic        clk,

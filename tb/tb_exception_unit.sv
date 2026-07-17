@@ -105,19 +105,19 @@ module tb_exception_unit;
         check("ext_irq MEIE=0 no trap", 0, 32'd0);
 
         ext_irq = 1; mie_global = 1; meie = 1;
-        check("ext_irq MIE=MEIE=1 trap", 1, 32'h80000011);
+        check("ext_irq MIE=MEIE=1 trap", 1, 32'h8000000B);
         ext_irq = 0; mie_global = 0; meie = 0;
 
         // TEST 11: interrupt priority over illegal instruction
         ex_illegal = 1; ext_irq = 1; mie_global = 1; meie = 1;
-        check("interrupt beats illegal", 1, 32'h80000011);
+        check("interrupt beats illegal", 1, 32'h8000000B);
         ex_illegal = 0; ext_irq = 0; mie_global = 0; meie = 0;
 
         // TEST 12: ex_valid=0 — only interrupt fires, not illegal
         ex_valid = 0; ex_illegal = 1;
         check("bubble: illegal suppressed", 0, 32'd0);
         ext_irq = 1; mie_global = 1; meie = 1;
-        check("bubble: interrupt still fires", 1, 32'h80000011);
+        check("bubble: interrupt still fires", 1, 32'h8000000B);
         ex_valid = 1; ex_illegal = 0; ext_irq = 0; mie_global = 0; meie = 0;
 
         $display("\n========== DONE ==========");
