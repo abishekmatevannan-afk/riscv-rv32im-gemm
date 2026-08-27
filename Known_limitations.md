@@ -174,3 +174,11 @@ Registered SIMD inputs (`simd_a_q`, `simd_b_q`, `simd_acc_q`) and a two-cycle st
 ### 14. Achieved Fmax vs 100 MHz target
 
 Design closes at ~79 MHz on xc7a200tsbg484-2 with a 10 ns constraint. Remaining WNS: -2.730 ns. The gap is entirely explained by the branch predictor combinational read path (item 12). No other paths are close to failing once that path is addressed.
+
+---
+
+## Fixed Bugs Worth Documenting
+
+### 15. mcause for machine external interrupt (fixed in b728bd3)
+
+`trap_cause` was `0x80000011` (17 decimal) instead of `0x8000000B` (11 decimal, RISC-V spec machine external interrupt code). Written as if 11 were hex. `tb_exception_unit.sv` was checking mcause but had the wrong expected value hardcoded, so the test passed while silently validating incorrect behavior. Both RTL and expected value corrected together. Lesson: a test that checks the wrong expected value is worse than no test — it creates false confidence.
