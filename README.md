@@ -66,6 +66,16 @@ flowchart TD
 
 ---
 
+## Pipeline in Action
+
+Branch mispredict — the predictor defaults to sequential fetch; when the branch resolves in EX, `mispredict` asserts, `pc_next` redirects to the correct target, and `if_id_flush`/`id_ex_flush` insert two bubbles in the same cycle.
+
+![branch mispredict waveform](docs/waveforms/bp_mispredict.png)
+
+Signals: `if_pc`, `ex_branch`, `ex_predict_taken`, `ex_branch_taken`, `mispredict`, `if_id_flush`, `id_ex_flush`, `pc_next` · scope: `tb_top_pipeline → cpu1` · zoom ~285 ns. Full waveform analysis in the [Waveforms](#waveforms) section.
+
+---
+
 ## Features
 
 ### RV32I + RV32M Base ISA
@@ -445,4 +455,4 @@ make wave MODULE=pmacc_pipeline
 
 ---
 
-*2nd year Computer Engineering — Toronto Metropolitan University*
+*3rd year Computer Engineering — Toronto Metropolitan University*
