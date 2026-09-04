@@ -1,6 +1,6 @@
 # RV32I+M RISC-V CPU Core
 
-A complete RV32I+M RISC-V processor implemented from scratch in SystemVerilog. Features a 5-stage pipeline with full hazard handling, split 4KB L1 cache hierarchy backed by a 5-manager/5-subordinate AXI4-Lite fabric, 2-bit branch predictor, M-mode exception handling, memory-mapped UART, hardware performance counters, two custom accelerators (parallel MAC array and output-stationary systolic array), and custom SIMD extensions benchmarked at **13.5× speedup** on INT8 matrix multiply.
+A complete RV32I+M RISC-V processor implemented in SystemVerilog with **up to 13.48× speedup on INT8 matrix multiply** (parallel MAC accelerator), synthesized at **79 MHz** on Xilinx Artix-7 (xc7a200tsbg484-2, Vivado 2025.2). Features a 5-stage pipeline with full hazard handling, split 4KB L1 cache hierarchy backed by a 5-manager/5-subordinate AXI4-Lite fabric, 2-bit branch predictor, M-mode exception handling, memory-mapped UART, hardware performance counters, and two custom accelerators (parallel MAC array and output-stationary systolic array) with custom SIMD extensions. 4×4 INT8 GEMM: **3.63× (SIMD)**, **13.48× (parallel MAC)**, **12.24× (systolic)** vs scalar RV32M · 14,084 LUTs · 1 BRAM.
 
 ---
 
@@ -160,17 +160,85 @@ Any violation fires `$error` during simulation; `make test-all` catches it autom
 
 | Version | Cycles | Instrs | CPI | Speedup |
 |---------|--------|--------|-----|---------|
-| Scalar (RV32M `mul`) | 1,065 | 841 | 1.266 | 1.00× |
-| SIMD (`PDOT`) | 261 | 201 | 1.299 | 4.08× |
-| Parallel MAC | 79 | — | — | 13.48× |
-| Systolic Array | 87 | — | — | 12.24× |
+| Scalar (RV32M `mul`) | 1,065 | 835 | 1.275 | 1.00× |
+| SIMD (`PDOT`) | 293 | 195 | 1.503 | 3.63× |
+| Parallel MAC | 79 | 22 | 3.59 | 13.48× |
+| Systolic Array | 87 | 26 | 3.35 | 12.24× |
+
+Instruction counts measured with corrected PMU (`instr_retired` gated by `!mem_wb_stall`; prior versions overcounted during stall cycles).
 
 **Scalar**: hardware `mul` (RV32M), 4×4 triple-nested loop. D$ hit rate 98.3%.  
-**SIMD**: load-use stall before each PDOT eliminated by scheduling three independent C-address instructions into the stall slot. D$ hit rate 96.2%. 261−201=60 overhead cycles from branch mispredictions and cold cache.  
-**Parallel MAC**: 4-cycle PE compute; remaining 75 cycles are AXI4-Lite register writes (4×4 A tiles, 4×4 B columns, CTRL).  
-**Systolic Array**: 11-cycle wavefront fill/drain; 76 cycles AXI overhead. Higher CPU overhead than parallel MAC for single 4×4 tile because the wavefront must fully drain before results are valid.
+**SIMD**: load-use stall before each PDOT eliminated by scheduling three independent C-address instructions into the stall slot. D$ hit rate 96.2%. Higher CPI (1.503) reflects two-stall-cycle cost of registered SIMD inputs added for timing closure.  
+**Parallel MAC**: 4-cycle PE compute; remaining 57 cycles are AXI4-Lite register writes. High CPI (3.59) is AXI setup overhead dominating a 4×4 problem — amortizes at larger matrix sizes.  
+**Systolic Array**: 11-cycle wavefront fill/drain; 61 cycles AXI overhead. Same overhead story as parallel MAC.
 
 **16×16 tiled matmul** (`make sim MODULE=matmul_16x16`): A=B=all-1s (16×16), tiled as 16 output tiles of 4×4 with 4 K-passes each. First K-pass uses CTRL=1 (clears `c_acc`); subsequent three use CTRL=3 (preserve `c_acc`). Result: C[i][j]=16 for all entries (one pass gives 4; four accumulated passes give 16). Proves the INT32 accumulator correctly chains K > 4 passes — the feature exists for exactly the question *"how does your accelerator handle matrices larger than the PE array?"*
+
+---
+
+## FPGA Implementation
+
+**Target:** Xilinx Artix-7 xc7a200tsbg484-2 · **Tool:** Vivado 2025.2 · **Constraint:** 100 MHz
+
+### Fmax Progression
+
+| Step | WNS | Fmax |
+|------|-----|------|
+| Baseline | -7.787 ns | ~57 MHz |
+| `ex_addr_i = ex_alu_result` | -4.467 ns | ~69 MHz |
+| `wb_csr_rd` removed | -3.670 ns | ~73 MHz |
+| Registered SIMD inputs + 2-cycle stall | -2.730 ns | **~79 MHz** |
+
+### Final Implementation (79 MHz)
+
+| Metric | Value |
+|--------|-------|
+| Slice LUTs | 14,084 |
+| Slice Registers | 5,399 |
+| Block RAM Tile | 1 (icache, RAMB36E1) |
+| DSP48E1 | 8 (multiplier) |
+| WNS | -2.730 ns |
+| Failing endpoints | 1,679 / 20,318 |
+
+Critical path: branch predictor BHT → `predict_taken` → `pc_next` mux → icache prefetch address (13.476 ns, 21 logic levels). See `SYNTHESIS.md` for full utilization breakdown and path analysis.
+
+---
+
+## Waveforms
+
+Four captures from the simulation testbenches, each verified signal-by-signal against the VCD before captioning.
+
+### D$ dirty-line eviction and refill (`make wave MODULE=dcache`)
+
+![dcache dirty eviction waveform](docs/waveforms/dcache_miss.png)
+
+Signals: `cpu_addr`, `cpu_we`, `cpu_wd`, `cache_miss`, `cache_stall`, `state[2:0]`, `mem_we`, `mem_addr`, `mem_wd`, `mem_re`, `mem_rd`. Navigate to `tb_dcache → dut` for `state`.
+
+Dirty-line eviction and refill: on a cache miss to a dirty line, the FSM transitions WB_PREP → WRITEBACK → FILL → DONE, writing back all four words of the evicted line before fetching the new line. Here the dirty line (base address 0x0000) is written back word-by-word with the modified value 0xCAFEBABE correctly appearing at offset 0x0 (word 0, where `write_word(0x0, CAFEBABE)` placed it), then FILL fetches the replacement line from 0x1000–0x100C.
+
+### Branch mispredict redirect and pipeline flush (`make wave MODULE=top_pipeline`)
+
+![branch mispredict waveform](docs/waveforms/bp_mispredict.png)
+
+Signals: `if_pc`, `ex_branch`, `ex_predict_taken`, `ex_branch_taken`, `mispredict`, `if_id_flush`, `id_ex_flush`, `pc_next`. All in `tb_top_pipeline → cpu1`. Zoom to the first mispredict event (~285 ns).
+
+Branch mispredict resolution: the front end fetches sequentially (0x20→0x24→0x28) with no prediction of the branch at 0x28 being taken. When the branch resolves in EX, `mispredict` asserts, redirecting `pc_next` to the true target 0x18 that same cycle, while `if_id_flush` and `id_ex_flush` assert together to clear the IF/ID and ID/EX latches, inserting two bubbles in the same cycle. `if_pc` picks up the corrected address the next cycle. This is the canonical cold-BTB case: no prior BTB entry exists for this branch, so the pipeline defaults to sequential fetch until EX-stage resolution forces the redirect and flush.
+
+### PMACC accumulator forwarding chain (`make wave MODULE=pmacc_pipeline`)
+
+![PMACC forwarding waveform](docs/waveforms/pmacc_forward.png)
+
+Signals: `ex_is_pmacc`, `simd_stall`, `simd_busy[1:0]`, `simd_acc_q`, `forward_acc[1:0]`, `ex_fwd_acc`, `ex_result`. All in `tb_pmacc_pipeline → cpu`. Zoom to 415–540 ns.
+
+PMACC accumulator forwarding: three back-to-back PMACC instructions execute through the SIMD MAC unit (`simd_busy` cycling 0→1→2 each time). Each instruction's result is forwarded from MEM back into EX via `ex_fwd_acc` before the destination register is written, allowing the next PMACC to accumulate without stalling for a full writeback. The running sum is verified in the trace: **0x46 → 0x8c → 0xd2**, each step correctly using the forwarded total as `acc_in` for the next PMACC.
+
+### Systolic array end-to-end AXI transaction (`make wave MODULE=systolic_array`)
+
+![systolic array waveform](docs/waveforms/systolic_axi.png)
+
+Signals: `awvalid`, `awready`, `wvalid`, `wready`, `awaddr`, `wdata`, `running`, `done`, `cycle_counter[3:0]`, `arvalid`, `rvalid`, `rdata`. All in `tb_systolic_array` top scope.
+
+End-to-end systolic array transaction over AXI: operand matrices are loaded via an 8-beat AXI write burst, after which `running` asserts and the array computes for 11 cycles (`cycle_counter` 0→0xa, asserting `done` when it reaches 0xb). Results are then drained back to the host over an AXI read burst. This capture shows the array's external timing contract; the internal diagonal wavefront fill (PE-to-PE staggered accumulation) is not visible at this signal granularity — capturing that would require testbench instrumentation of the PE generate block (`feed_gen`/`bfeed_gen` scopes), which is left as future work.
 
 ---
 
@@ -285,7 +353,7 @@ sudo apt install iverilog
 make test-all
 ```
 
-Expected: `33 passed   0 failed`
+Expected: `34 passed   0 failed`
 
 ### Run individual module tests
 
@@ -310,10 +378,10 @@ make sim MODULE=matmul
 
 Expected output (approximate):
 ```
-Scalar:       1065 cycles   841 instrs   CPI=1.266   1.00x
-SIMD:          261 cycles   201 instrs   CPI=1.299   4.08x
-Parallel MAC:   79 cycles                            13.48x
-Systolic:       87 cycles                            12.24x
+Scalar:       1065 cycles   835 instrs   CPI=1.275   1.00x
+SIMD:          293 cycles   195 instrs   CPI=1.503   3.63x
+Parallel MAC:   79 cycles    22 instrs   CPI=3.59   13.48x
+Systolic:       87 cycles    26 instrs   CPI=3.35   12.24x
 ```
 
 ### View waveforms
@@ -352,7 +420,7 @@ make wave MODULE=pmacc_pipeline
 | Single-cycle CPU | Regression baseline | ✅ |
 | Pipelined CPU | test1, test2, exception, matmul | ✅ |
 | SVA assertions | forwarding one-hot, x0 invariant, load-use→stall, AXI awvalid sticky (all 4 channels) | ✅ |
-| **Total** | **33 testbenches** | **33/33** |
+| **Total** | **34 testbenches** | **34/34** |
 
 ---
 
@@ -360,7 +428,8 @@ make wave MODULE=pmacc_pipeline
 
 - **Direct-mapped caches** — conflict misses for working sets that alias to the same cache index. 2-way set associative is the natural next step.
 - **Direct-mapped BTB** — 64 entries indexed by PC[7:2]; a new branch evicts the old entry at the same index. The tag check (PC[31:8]) prevents wrong-path redirects but cannot prevent a high-traffic entry from being evicted by a colliding PC.
-- **No FPGA timing closure** — Yosys synthesis completes (3,900 LUTs of pipeline logic excluding memory arrays); place-and-route requires `(* ram_style = "block" *)` attributes for BRAM inference before the design fits an iCE40. Vivado/Quartus flows with BRAM attributes are expected to close at ~100–150 MHz on Artix-7. See `SYNTHESIS.md` for details.
+- **FPGA synthesis** — Fmax, critical path analysis, and utilization breakdown in `SYNTHESIS.md`. Known timing and BRAM inference gaps in `Known_limitations.md`.
+- **dcache BRAM inference** — `data[]` maps to distributed RAM (RAM64M×176) instead of RAMB36E1. Write-hit forwarding creates a combinational loop that prevents unconditional BRAM read inference. See `Known_limitations.md`.
 
 ---
 
@@ -369,8 +438,8 @@ make wave MODULE=pmacc_pipeline
 | Tool | Version | Purpose |
 |------|---------|---------|
 | Icarus Verilog | 11+ | RTL simulation |
-| GTKWave / Wavetrace | any | Waveform analysis |
-| Yosys | 0.66 | Synthesis (see `SYNTHESIS.md`) |
+| Wavetrace (VS Code) | any | Waveform analysis |
+| Vivado | 2025.2 | Synthesis and implementation (see `SYNTHESIS.md`) |
 | GNU Make | any | Build automation |
 | Git | any | Version control |
 

@@ -26,7 +26,7 @@ module tb_systolic_array;
     always #5 clk = ~clk;
 
     initial begin
-        $dumpfile("sim/tb_systolic_array.vcd");
+        $dumpfile("sim/systolic_array.vcd");
         $dumpvars(0, tb_systolic_array);
     end
 

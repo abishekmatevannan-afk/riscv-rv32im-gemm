@@ -14,6 +14,7 @@ sim/
 .DS_Store
 **/.DS_Store
 fix_summary.txt
+WAVEFORM_DEBUG_NOTES.md
 *.json # Yosys netlists
 *.blif # 
 *.asc # iCE40 bitstream
