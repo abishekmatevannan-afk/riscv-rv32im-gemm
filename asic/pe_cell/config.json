@@ -1,0 +1,15 @@
+{
+    "meta": { "version": 2 },
+
+    "DESIGN_NAME": "pe_cell",
+    "VERILOG_FILES": ["dir::../../src/pe_cell.sv"],
+
+    "CLOCK_PORT": "clk",
+    "CLOCK_PERIOD": 10.0,
+
+    "DIE_AREA": "0 0 100 100",
+    "FP_CORE_UTIL": 50,
+
+    "PDK": "sky130A",
+    "STD_CELL_LIBRARY": "sky130_fd_sc_hd"
+}

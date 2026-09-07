@@ -1,0 +1,15 @@
+{
+    "meta": { "version": 2 },
+
+    "DESIGN_NAME": "alu",
+    "VERILOG_FILES": ["dir::../../src/alu.sv"],
+
+    "CLOCK_PORT": null,
+    "CLOCK_PERIOD": 10.0,
+
+    "DIE_AREA": "0 0 200 200",
+    "FP_CORE_UTIL": 45,
+
+    "PDK": "sky130A",
+    "STD_CELL_LIBRARY": "sky130_fd_sc_hd"
+}
