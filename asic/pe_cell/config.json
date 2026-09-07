@@ -7,7 +7,7 @@
     "CLOCK_PORT": "clk",
     "CLOCK_PERIOD": 10.0,
 
-    "DIE_AREA": "0 0 100 100",
+    "DIE_AREA": [0, 0, 100, 100],
     "FP_CORE_UTIL": 50,
 
     "PDK": "sky130A",
