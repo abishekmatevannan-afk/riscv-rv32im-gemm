@@ -214,6 +214,23 @@ Critical path: branch predictor BHT → `predict_taken` → `pc_next` mux → ic
 
 ---
 
+## FPGA vs. ASIC — PE Cell Comparison
+
+The PE cell (single 8×8 MAC element from the parallel MAC accelerator) was taken through both flows to directly compare FPGA and ASIC implementation. ASIC numbers pending OpenLane 2 / Sky130 run — see `asic/` for setup and configs.
+
+| Metric | FPGA (Vivado, Artix-7) | ASIC (OpenLane 2, Sky130 130nm) |
+|--------|------------------------|----------------------------------|
+| Target | xc7a200tsbg484-2 | sky130_fd_sc_hd |
+| Clock constraint | 10 ns (100 MHz) | 10 ns (100 MHz) |
+| Achieved Fmax | — (part of 79 MHz full design) | TBD |
+| Cell / LUT count | — (absorbed into 14,084 LUTs) | TBD |
+| Area | — | TBD (µm²) |
+| Multiplier mapping | DSP48E1 (hard block) | Synthesized from standard cells |
+| Critical path | — | TBD |
+| Output artifact | Bitstream | GDSII |
+
+---
+
 ## Waveforms
 
 Four captures from the simulation testbenches, each verified signal-by-signal against the VCD before captioning.
