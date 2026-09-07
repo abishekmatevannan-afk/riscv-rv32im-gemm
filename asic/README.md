@@ -21,9 +21,15 @@ ASIC flow is meaningful because ML hardware teams (Tenstorrent, AMD AI engines) 
 in terms of PE arrays — the GDSII and timing report for one PE is directly relatable
 to a production tapeout conversation.
 
-RTL verified standalone before OpenLane — `make sim MODULE=pe_cell` runs 6 tests
+RTL verified standalone before OpenLane — `make sim MODULE=pe_cell` runs 7 tests
 including a PDOT cross-validation against the full pipeline testbench (expected 70,
-confirmed 70).
+confirmed 70), and a signed/unsigned discriminator (a=0xFF, b=0x02 → 510 unsigned,
+which would be -2 if the operands were sign-extended instead of zero-extended).
+
+**Clock constraint:** 10 ns (100 MHz) — same constraint used for the FPGA run in
+Vivado, which failed to close at -2.730 ns WNS (achieved 79 MHz). The ASIC
+comparison answers directly: can a standard-cell flow close the timing the FPGA
+couldn't? This is a deliberate choice, not a default placeholder.
 
 ---
 

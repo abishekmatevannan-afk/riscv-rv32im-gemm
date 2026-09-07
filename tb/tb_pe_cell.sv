@@ -5,6 +5,12 @@
 //
 // Cross-validation anchor: PDOT([1,2,3,4],[5,6,7,8]) = 70, which
 // matches the verified result from tb_pmacc_pipeline and tb_parallel_mac.
+//
+// Test 7 is a signed/unsigned discriminator: a=0xFF, b=0x02.
+//   Unsigned (correct): 255*2 = 510
+//   Signed (wrong):     -1 *2 = -2 (0xFFFFFFFE)
+// Passing 510 proves the zero-extension in pe_cell.sv matches
+// the {24'd0, a_byte} zero-extension in parallel_mac_sub.sv line 198.
 
 module tb_pe_cell;
 
@@ -83,6 +89,13 @@ module tb_pe_cell;
         tick(8'd255, 8'd255);
         tick(8'd255, 8'd255);
         check("4x(255*255) = 260100, no overflow", 32'd260100);
+
+        // --- Test 7: signed/unsigned discriminator ---
+        // 0xFF = 255 unsigned, -1 signed. Unsigned: 255*2=510. Signed: -1*2=-2.
+        // Checks that extraction preserved {24'd0,...} zero-extension, not sign-extension.
+        rst = 1; @(posedge clk); #1; rst = 0;
+        tick(8'hFF, 8'h02);
+        check("unsigned: 0xFF*2 = 510 not -2", 32'd510);
 
         $display("\n========== RESULTS: %0d passed, %0d failed ==========",
                  pass_cnt, fail_cnt);
