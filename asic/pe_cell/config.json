@@ -5,7 +5,7 @@
     "VERILOG_FILES": ["dir::../../src/pe_cell.sv"],
 
     "CLOCK_PORT": "clk",
-    "CLOCK_PERIOD": 17.0,
+    "CLOCK_PERIOD": 16.0,
 
     "DIE_AREA": [0, 0, 100, 100],
     "FP_CORE_UTIL": 50,

@@ -2,6 +2,7 @@
 
 A complete RV32I+M RISC-V processor implemented in SystemVerilog with **up to 13.48× speedup on INT8 matrix multiply** (parallel MAC accelerator), synthesized at **79 MHz** on Xilinx Artix-7 (xc7a200tsbg484-2, Vivado 2025.2). Features a 5-stage pipeline with full hazard handling, split 4KB L1 cache hierarchy backed by a 5-manager/5-subordinate AXI4-Lite fabric, 2-bit branch predictor, M-mode exception handling, memory-mapped UART, hardware performance counters, and two custom accelerators (parallel MAC array and output-stationary systolic array) with custom SIMD extensions. 4×4 INT8 GEMM: **3.63× (SIMD)**, **13.48× (parallel MAC)**, **12.24× (systolic)** vs scalar RV32M · 14,084 LUTs · 1 BRAM.
 
+
 ---
 
 ## Architecture
@@ -68,7 +69,7 @@ flowchart TD
 
 ## Pipeline in Action
 
-Branch mispredict — the predictor defaults to sequential fetch; when the branch resolves in EX, `mispredict` asserts, `pc_next` redirects to the correct target, and `if_id_flush`/`id_ex_flush` insert two bubbles in the same cycle.
+Branch mispredict: the predictor defaults to sequential fetch, and when the branch resolves in EX, `mispredict` asserts, `pc_next` redirects to the correct target, and `if_id_flush`/`id_ex_flush` insert two bubbles in the same cycle.
 
 ![branch mispredict waveform](docs/waveforms/bp_mispredict.png)
 
@@ -79,13 +80,13 @@ Signals: `if_pc`, `ex_branch`, `ex_predict_taken`, `ex_branch_taken`, `mispredic
 ## Features
 
 ### RV32I + RV32M Base ISA
-All 37 base integer instructions (R, I, S, B, U, J formats). Hardware multiply/divide unit: MUL, MULH, MULHU, MULHSU, DIV, DIVU, REM, REMU — 32-cycle restoring divider, combinational multiplier that maps to DSP48 on Xilinx targets.
+All 37 base integer instructions (R, I, S, B, U, J formats). Hardware multiply/divide unit: MUL, MULH, MULHU, MULHSU, DIV, DIVU, REM, REMU, using a 32-cycle restoring divider and a combinational multiplier that maps to DSP48 on Xilinx targets.
 
 ### 5-Stage Pipeline
-- **Data forwarding** — EX/MEM and MEM/WB paths for rs1/rs2; dedicated acc forwarding path for PMACC (gated on `ex_is_pmacc` to prevent false forwards)
-- **Load-use stall** — 1-cycle bubble for load→use; extended to cover PMACC accumulator port (load→PMACC with same rd stalls)
-- **Branch predictor** — 2-bit saturating counter BHT with 64-entry BTB; trained on JAL/JALR/branches; flushes only on misprediction
-- **Cache stall** — all five stages frozen during D$ miss; IF/ID frozen with bubble on I$ miss
+- **Data forwarding**: EX/MEM and MEM/WB paths for rs1/rs2, plus a dedicated acc forwarding path for PMACC (gated on `ex_is_pmacc` to prevent false forwards)
+- **Load-use stall**: a 1-cycle bubble for load→use, extended to cover the PMACC accumulator port (load→PMACC with same rd stalls)
+- **Branch predictor**: 2-bit saturating counter BHT with 64-entry BTB, trained on JAL/JALR/branches, and flushes only on misprediction
+- **Cache stall**: all five stages frozen during a D$ miss, and IF/ID frozen with a bubble on an I$ miss
 
 ### L1 Cache Hierarchy
 | Cache | Size | Organization | Policy |
@@ -100,8 +101,8 @@ Address-decoded crossbar connecting five managers (icache, dcache, IO, parallel 
 
 | Subordinate | Address | Description |
 |-------------|---------|-------------|
-| ISRAM | — | Instruction SRAM (read-only, `$readmemh` init) |
-| DSRAM | — | Data SRAM (read/write, zero-init) |
+| ISRAM | N/A | Instruction SRAM (read-only, `$readmemh` init) |
+| DSRAM | N/A | Data SRAM (read/write, zero-init) |
 | UART | `0xFFFF0000` | UART TX/RX subordinate |
 | Parallel MAC | `0xFFFE0000` | 4×4 PE grid accelerator |
 | Systolic Array | `0xFFFD0000` | Output-stationary wavefront accelerator |
@@ -139,10 +140,10 @@ Seven instructions at RISC-V custom opcode `0001011`, operating on 32-bit regist
 | `PSRA rd, rs1, shamt` | 100 | `rd[i] = rs1[i] >>> shamt` | shamt in funct7[3:0], signed lanes |
 | `PRELU rd, rs1` | 101 | `rd[i] = max(0, rs1[i])` | Signed byte interpretation |
 
-**PMACC** reads `rd` as a third source (accumulator), writes back `rd + PDOT(rs1, rs2)`. The register file has a dedicated third read port; the hazard unit and forward unit both handle the accumulator path independently from rs1/rs2.
+**PMACC** reads `rd` as a third source (accumulator), writes back `rd + PDOT(rs1, rs2)`. The register file has a dedicated third read port, and the hazard unit and forward unit both handle the accumulator path independently from rs1/rs2.
 
 ### Pipeline Verification (SVA)
-Four invariants are checked as SystemVerilog assertions at simulation time — synthesizers treat them as no-ops, iverilog evaluates them on every testbench run:
+Four invariants are checked as SystemVerilog assertions at simulation time, since synthesizers treat them as no-ops while iverilog evaluates them on every testbench run:
 
 | Assertion | Location | Property |
 |-----------|----------|----------|
@@ -151,7 +152,7 @@ Four invariants are checked as SystemVerilog assertions at simulation time — s
 | Load-use → stall | `hazard_unit.sv` | `load_use_hazard` implies `if_id_stall` |
 | AXI awvalid sticky | `top_pipeline.sv` | awvalid stays high until awready on all 4 AXI channels |
 
-Any violation fires `$error` during simulation; `make test-all` catches it automatically.
+Any violation fires `$error` during simulation, and `make test-all` catches it automatically.
 
 ### Hardware Accelerators
 
@@ -175,14 +176,14 @@ Any violation fires `$error` during simulation; `make test-all` catches it autom
 | Parallel MAC | 79 | 22 | 3.59 | 13.48× |
 | Systolic Array | 87 | 26 | 3.35 | 12.24× |
 
-Instruction counts measured with corrected PMU (`instr_retired` gated by `!mem_wb_stall`; prior versions overcounted during stall cycles).
+Instruction counts measured with corrected PMU (`instr_retired` gated by `!mem_wb_stall`, since prior versions overcounted during stall cycles).
 
 **Scalar**: hardware `mul` (RV32M), 4×4 triple-nested loop. D$ hit rate 98.3%.  
-**SIMD**: load-use stall before each PDOT eliminated by scheduling three independent C-address instructions into the stall slot. D$ hit rate 96.2%. Higher CPI (1.503) reflects two-stall-cycle cost of registered SIMD inputs added for timing closure.  
-**Parallel MAC**: 4-cycle PE compute; remaining 57 cycles are AXI4-Lite register writes. High CPI (3.59) is AXI setup overhead dominating a 4×4 problem — amortizes at larger matrix sizes.  
-**Systolic Array**: 11-cycle wavefront fill/drain; 61 cycles AXI overhead. Same overhead story as parallel MAC.
+**SIMD**: load-use stall before each PDOT eliminated by scheduling three independent C-address instructions into the stall slot. D$ hit rate 96.2%. Higher CPI (1.503) reflects the two-stall-cycle cost of registered SIMD inputs added for timing closure.  
+**Parallel MAC**: 4-cycle PE compute, and the remaining 57 cycles are AXI4-Lite register writes. High CPI (3.59) is AXI setup overhead dominating a 4×4 problem, and it amortizes at larger matrix sizes.  
+**Systolic Array**: 11-cycle wavefront fill/drain, 61 cycles AXI overhead. Same overhead story as parallel MAC.
 
-**16×16 tiled matmul** (`make sim MODULE=matmul_16x16`): A=B=all-1s (16×16), tiled as 16 output tiles of 4×4 with 4 K-passes each. First K-pass uses CTRL=1 (clears `c_acc`); subsequent three use CTRL=3 (preserve `c_acc`). Result: C[i][j]=16 for all entries (one pass gives 4; four accumulated passes give 16). Proves the INT32 accumulator correctly chains K > 4 passes — the feature exists for exactly the question *"how does your accelerator handle matrices larger than the PE array?"*
+**16×16 tiled matmul** (`make sim MODULE=matmul_16x16`): A=B=all-1s (16×16), tiled as 16 output tiles of 4×4 with 4 K-passes each. First K-pass uses CTRL=1 (clears `c_acc`), and the subsequent three use CTRL=3 (preserve `c_acc`). Result: C[i][j]=16 for all entries (one pass gives 4, four accumulated passes give 16). Proves the INT32 accumulator correctly chains K > 4 passes, which is exactly the feature that answers the question *"how does your accelerator handle matrices larger than the PE array?"*
 
 ---
 
@@ -214,19 +215,21 @@ Critical path: branch predictor BHT → `predict_taken` → `pc_next` mux → ic
 
 ---
 
-## FPGA vs. ASIC — PE Cell Comparison
+## FPGA vs. ASIC: PE Cell Comparison
 
-The PE cell (single 8×8 MAC element from the parallel MAC accelerator) was taken through both flows to directly compare FPGA and ASIC implementation. ASIC numbers pending OpenLane 2 / Sky130 run — see `asic/` for setup and configs.
+Two designs taken through an open-source ASIC flow to compare with the FPGA implementation in Vivado. Full writeup, setup instructions, and every ruled-out hypothesis in [`asic/README.md`](asic/README.md).
 
-| Metric | FPGA (Vivado, Artix-7) | ASIC (OpenLane 2, Sky130 130nm) |
+![pe_cell placed-and-routed layout, Sky130](asic/pe_cell/layout.png)
+
+| Metric | FPGA (Vivado, Artix-7) | ASIC (LibreLane, Sky130 130nm) |
 |--------|------------------------|----------------------------------|
 | Target | xc7a200tsbg484-2 | sky130_fd_sc_hd |
-| Clock constraint | 10 ns (100 MHz) | 10 ns (100 MHz) |
-| Achieved Fmax | — (part of 79 MHz full design) | TBD |
-| Cell / LUT count | — (absorbed into 14,084 LUTs) | TBD |
-| Area | — | TBD (µm²) |
+| Clock constraint | 10 ns (100 MHz) | 16 ns (62.5 MHz) |
+| Achieved result | 79 MHz (part of full design) | Closes at tt/ff corners, -0.370 ns short at ss corner |
+| Cell count | — (absorbed into 14,084 LUTs) | 1,081 standard cells |
+| Area | — | 6,831.55 µm² |
 | Multiplier mapping | DSP48E1 (hard block) | Synthesized from standard cells |
-| Critical path | — | TBD |
+| Critical path | BHT → `predict_taken` → `pc_next` mux → icache prefetch (13.476 ns) | 8×8 multiply feeding 32-bit accumulate, single cycle |
 | Output artifact | Bitstream | GDSII |
 
 ---
@@ -249,7 +252,7 @@ Dirty-line eviction and refill: on a cache miss to a dirty line, the FSM transit
 
 Signals: `if_pc`, `ex_branch`, `ex_predict_taken`, `ex_branch_taken`, `mispredict`, `if_id_flush`, `id_ex_flush`, `pc_next`. All in `tb_top_pipeline → cpu1`. Zoom to the first mispredict event (~285 ns).
 
-Branch mispredict resolution: the front end fetches sequentially (0x20→0x24→0x28) with no prediction of the branch at 0x28 being taken. When the branch resolves in EX, `mispredict` asserts, redirecting `pc_next` to the true target 0x18 that same cycle, while `if_id_flush` and `id_ex_flush` assert together to clear the IF/ID and ID/EX latches, inserting two bubbles in the same cycle. `if_pc` picks up the corrected address the next cycle. This is the canonical cold-BTB case: no prior BTB entry exists for this branch, so the pipeline defaults to sequential fetch until EX-stage resolution forces the redirect and flush.
+Branch mispredict resolution: the front end fetches sequentially (0x20→0x24→0x28) with no prediction of the branch at 0x28 being taken. When the branch resolves in EX, `mispredict` asserts, redirecting `pc_next` to the true target 0x18 that same cycle, while `if_id_flush` and `id_ex_flush` assert together to clear the IF/ID and ID/EX latches, inserting two bubbles in the same cycle. `if_pc` picks up the corrected address the next cycle. This is the canonical cold-BTB case, since no prior BTB entry exists for this branch, so the pipeline defaults to sequential fetch until EX-stage resolution forces the redirect and flush.
 
 ### PMACC accumulator forwarding chain (`make wave MODULE=pmacc_pipeline`)
 
@@ -265,7 +268,7 @@ PMACC accumulator forwarding: three back-to-back PMACC instructions execute thro
 
 Signals: `awvalid`, `awready`, `wvalid`, `wready`, `awaddr`, `wdata`, `running`, `done`, `cycle_counter[3:0]`, `arvalid`, `rvalid`, `rdata`. All in `tb_systolic_array` top scope.
 
-End-to-end systolic array transaction over AXI: operand matrices are loaded via an 8-beat AXI write burst, after which `running` asserts and the array computes for 11 cycles (`cycle_counter` 0→0xa, asserting `done` when it reaches 0xb). Results are then drained back to the host over an AXI read burst. This capture shows the array's external timing contract; the internal diagonal wavefront fill (PE-to-PE staggered accumulation) is not visible at this signal granularity — capturing that would require testbench instrumentation of the PE generate block (`feed_gen`/`bfeed_gen` scopes), which is left as future work.
+End-to-end systolic array transaction over AXI: operand matrices are loaded via an 8-beat AXI write burst, after which `running` asserts and the array computes for 11 cycles (`cycle_counter` 0→0xa, asserting `done` when it reaches 0xb). Results are then drained back to the host over an AXI read burst. This capture shows the array's external timing contract. The internal diagonal wavefront fill (PE-to-PE staggered accumulation) is not visible at this signal granularity, so capturing that would require testbench instrumentation of the PE generate block (`feed_gen`/`bfeed_gen` scopes), which is left as future work.
 
 ---
 
@@ -453,10 +456,10 @@ make wave MODULE=pmacc_pipeline
 
 ## Known Limitations
 
-- **Direct-mapped caches** — conflict misses for working sets that alias to the same cache index. 2-way set associative is the natural next step.
-- **Direct-mapped BTB** — 64 entries indexed by PC[7:2]; a new branch evicts the old entry at the same index. The tag check (PC[31:8]) prevents wrong-path redirects but cannot prevent a high-traffic entry from being evicted by a colliding PC.
-- **FPGA synthesis** — Fmax, critical path analysis, and utilization breakdown in `SYNTHESIS.md`. Known timing and BRAM inference gaps in `Known_limitations.md`.
-- **dcache BRAM inference** — `data[]` maps to distributed RAM (RAM64M×176) instead of RAMB36E1. Write-hit forwarding creates a combinational loop that prevents unconditional BRAM read inference. See `Known_limitations.md`.
+- **Direct-mapped caches**: conflict misses for working sets that alias to the same cache index, so 2-way set associative is the natural next step.
+- **Direct-mapped BTB**: 64 entries indexed by PC[7:2], and a new branch evicts the old entry at the same index. The tag check (PC[31:8]) prevents wrong-path redirects but cannot prevent a high-traffic entry from being evicted by a colliding PC.
+- **FPGA synthesis**: Fmax, critical path analysis, and utilization breakdown in `SYNTHESIS.md`, with known timing and BRAM inference gaps in `Known_limitations.md`.
+- **dcache BRAM inference**: `data[]` maps to distributed RAM (RAM64M×176) instead of RAMB36E1, since write-hit forwarding creates a combinational loop that prevents unconditional BRAM read inference. See `Known_limitations.md`.
 
 ---
 
