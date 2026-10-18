@@ -1,6 +1,6 @@
 # RV32I+M RISC-V CPU Core
 
-A complete RV32I+M RISC-V processor implemented in SystemVerilog with **up to 13.48× speedup on INT8 matrix multiply** (parallel MAC accelerator), synthesized at **79 MHz** on Xilinx Artix-7 (xc7a200tsbg484-2, Vivado 2025.2). Features a 5-stage pipeline with full hazard handling, split 4KB L1 cache hierarchy backed by a 5-manager/5-subordinate AXI4-Lite fabric, 2-bit branch predictor, M-mode exception handling, memory-mapped UART, hardware performance counters, and two custom accelerators (parallel MAC array and output-stationary systolic array) with custom SIMD extensions. 4×4 INT8 GEMM: **3.63× (SIMD)**, **13.48× (parallel MAC)**, **12.24× (systolic)** vs scalar RV32M · 14,084 LUTs · 1 BRAM.
+A complete RV32I+M RISC-V processor implemented in SystemVerilog with **up to 13.48× speedup on UINT8 matrix multiply** (parallel MAC accelerator), synthesized at **79 MHz** on Xilinx Artix-7 (xc7a200tsbg484-2, Vivado 2025.2). Features a 5-stage pipeline with full hazard handling, split 4KB L1 cache hierarchy backed by a 5-manager/5-subordinate AXI4-Lite fabric, 2-bit branch predictor, M-mode exception handling, memory-mapped UART, hardware performance counters, and two custom accelerators (parallel MAC array and output-stationary systolic array) with custom SIMD extensions. 4×4 UINT8 GEMM: **3.63× (SIMD)**, **13.48× (parallel MAC)**, **12.24× (systolic)** vs scalar RV32M · 14,084 LUTs · 1 BRAM.
 
 
 ---
@@ -156,7 +156,7 @@ Any violation fires `$error` during simulation, and `make test-all` catches it a
 
 ### Hardware Accelerators
 
-**Parallel MAC** (`0xFFFE0000`): 4×4 systolic PE grid where all 16 PEs fire in parallel each k-step. Computes a full 4×4 INT8 GEMM in 4 cycles. Supports:
+**Parallel MAC** (`0xFFFE0000`): 4×4 systolic PE grid where all 16 PEs fire in parallel each k-step. Computes a full 4×4 UINT8 GEMM in 4 cycles. Supports:
 - Tile-K accumulation (CTRL bit 1 preserves `c_acc` across passes for K > 4)
 - Requantization: `saturate_uint8((c_acc >> scale_shift) + zero_point)`
 - Raw INT32 readback at `0xFFFE0080–0xFFFE00BC`
@@ -354,9 +354,9 @@ rv32i-core-cpu/
 │   ├── test1.hex                    # Arithmetic, branch, loop
 │   ├── test2.hex                    # Memory, logic, LUI
 │   ├── exception_test.hex           # ECALL, MRET, CSR
-│   ├── matmul_scalar.hex            # 4×4 INT8 GEMM, RV32M mul
-│   ├── matmul_simd.hex              # 4×4 INT8 GEMM, PDOT
-│   ├── matmul_systolic.hex          # 4×4 INT8 GEMM, systolic array
+│   ├── matmul_scalar.hex            # 4×4 UINT8 GEMM, RV32M mul
+│   ├── matmul_simd.hex              # 4×4 UINT8 GEMM, PDOT
+│   ├── matmul_systolic.hex          # 4×4 UINT8 GEMM, systolic array
 │   ├── pmacc_test.hex               # PMACC forwarding paths test
 │   ├── psra_prelu_test.hex          # PSRA/PRELU forwarding paths test
 │   └── matmul_16x16_systolic.hex    # 16×16 tiled matmul, accumulate mode
