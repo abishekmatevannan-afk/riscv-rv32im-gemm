@@ -73,7 +73,7 @@ KLayout's GUI to view a GDS file.
 Copy this repo into that mounted design directory from your host machine, not
 from inside the container:
 ```bash
-cp -r /path/to/rv32i-core-cpu /path/to/mounted/designs/
+cp -r /path/to/riscv-rv32im-gemm /path/to/mounted/designs/
 ```
 
 ### Install LibreLane inside the container
@@ -90,7 +90,7 @@ an issue, so do not worry.
 
 ## Running the flow
 
-From `/foss/designs/rv32i-core-cpu` inside the container:
+From `/foss/designs/riscv-rv32im-gemm` inside the container:
 
 ```bash
 librelane asic/alu/config.json
@@ -176,16 +176,18 @@ screenshot was ever taken.
 | Place & route | Vendor tool, fixed fabric grid | Free-form standard-cell P&R |
 | Timing sign-off | Vivado STA (vendor SDF) | OpenSTA with RC extraction, multi-corner (PVT) |
 | Output | Bitstream | GDSII (send to fab) |
-| Multiplier | DSP48E1 (hard block) | Synthesized from standard cells |
+| PE multiplier | LUT logic (the 8 DSP48E1s are all used by the RV32M multiplier) | Synthesized from standard cells |
 | Logic resources | 14,084 LUTs (full CPU, FPGA fabric-wide) | 1,081 standard cells, 6,831.55 µm² (pe_cell alone, so not  comparable since it's a full design vs. a single extracted module) |
 | Result | 79 MHz (10 ns constraint, -2.730 ns WNS after 3 critical-path fixes) | Closes at 62.5 MHz (16 ns) for typical and fast-process corners, and falls 0.370 ns short at the worst-case slow-process corner |
 
-**Why the FPGA number is higher, and why that's a real result
-rather than a discrepancy:** the FPGA's hard DSP48E1 block
-performs the 8×8 multiply as dedicated silicon with a 
-pre characterized fast path, so no synthesized gate tree is involved. The
-ASIC flow has to build the equivalent multiplier out of Sky130's standard
-cells, and Sky130 is a 130nm process, older than what modern FPGA
-fabrics are built on. A modern FPGA's hard multiplier block outperforming an
-open-source flow's synthesized multiplier on an older process node is a
-legitimate and explainable outcome, not a sign that either result is wrong.
+**Why the two numbers aren't a like-for-like comparison:** 79 MHz is the
+Fmax of the whole CPU, and it is set by the CPU's branch-resolution path
+(forwarding, ALU compare, mispredict flush into the I-cache), not by the
+PE. On the FPGA the accelerators' 8×8 multiplies are built in LUT logic
+(SYNTHESIS.md module table: the parallel MAC and systolic array use 0 DSPs,
+all 8 DSP48E1s belong to the RV32M multiplier), and none of the worst FPGA
+timing paths go through them. In the ASIC flow the PE's multiply-accumulate
+is the entire design, so it is the critical path by definition, built from
+Sky130 130nm standard cells, an older node than the 28nm Artix-7. Neither
+result is wrong. They measure different things: a full CPU limited
+elsewhere, and one PE limited by its own multiply-accumulate.
