@@ -211,7 +211,7 @@ Instruction counts measured with corrected PMU (`instr_retired` gated by `!mem_w
 | WNS | -2.730 ns |
 | Failing endpoints | 1,679 / 20,318 |
 
-Critical path: branch predictor BHT → `predict_taken` → `pc_next` mux → icache prefetch address (13.476 ns, 21 logic levels). See `SYNTHESIS.md` for full utilization breakdown and path analysis.
+Critical path: branch resolution in EX, from EX/MEM forwarding → ALU compare → `branch_taken` → mispredict flush → I-cache valid bit (12.401 ns data path, 17 logic levels). The single-cycle multiplier path is 0.06 ns behind. See `SYNTHESIS.md` for full utilization breakdown and path analysis.
 
 ---
 
@@ -228,8 +228,8 @@ Two designs taken through an open-source ASIC flow to compare with the FPGA impl
 | Achieved result | 79 MHz (part of full design) | Closes at tt/ff corners, -0.370 ns short at ss corner |
 | Cell count | — (absorbed into 14,084 LUTs) | 1,081 standard cells |
 | Area | — | 6,831.55 µm² |
-| Multiplier mapping | DSP48E1 (hard block) | Synthesized from standard cells |
-| Critical path | BHT → `predict_taken` → `pc_next` mux → icache prefetch (13.476 ns) | 8×8 multiply feeding 32-bit accumulate, single cycle |
+| Multiplier mapping | DSP48E1 for RV32M; accelerator PE multiplies in LUTs | Synthesized from standard cells |
+| Critical path | Branch resolution: forwarding → ALU compare → flush → I-cache valid (12.401 ns) | 8×8 multiply feeding 32-bit accumulate, single cycle |
 | Output artifact | Bitstream | GDSII |
 
 ---
