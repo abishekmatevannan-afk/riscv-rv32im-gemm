@@ -33,13 +33,26 @@
 
 ### Critical Path
 
-**Source:** `BP/bht_reg[32][1]` (branch predictor BHT flip-flop)  
-**Sink:** `ICACHE/data_q_reg`  
-**Delay:** 13.476 ns, 21 logic levels
+From the routed `report_timing_summary` (slow corner, Jul 5 2026 run):
 
-The BHT array is read combinationally through a 64:1 mux tree. The result feeds `predict_taken` (AND-gated with `btb_valid` and tag comparison), which drives the `pc_next` mux, which feeds the icache prefetch address register.
+**Source:** `EX_MEM/mem_rd_addr_reg[0]`  
+**Sink:** `ICACHE/valid_reg[68]`  
+**Data path delay:** 12.401 ns (logic 2.164 ns, route 10.237 ns = 82.6%), 17 logic levels (all LUTs)  
+**Clock skew:** −0.325 ns · **Uncertainty:** 0.035 ns · **Slack:** −2.730 ns
 
-**Known fix:** Register `predict_taken` and `predict_target` with a one-cycle validity gate that suppresses stale predictions after any of the five `pc_next` override conditions (trap, mret, jump mispredict, branch mispredict, icache stall interaction). Expected gain: 4–8 MHz. Not implemented — the validity gate must interact correctly with all five override conditions and three stall types; correctness risk outweighs the gain at this stage. See `Known_limitations.md`.
+This is branch resolution in EX. The EX/MEM destination register is compared in the forward unit, the forwarded operand (`ex_fwd_b`, fanout 109 into the ALU) goes through the ALU subtract and the zero detect, `ex_alu_zero` becomes `branch_taken`, the hazard unit turns a mispredict into `if_id_flush`, and that flush gates the I-cache's valid-bit write during a fill. All in one cycle.
+
+12.401 + 0.325 + 0.035 − 0.032 (setup) = 12.730 ns, which is the 78.6 MHz Fmax.
+
+**Second path family, almost tied:** forwarding → `MULDIV` two cascaded DSP48E1 → CARRY4 chain → `EX_MEM/mem_alu_result_reg`. 12.636 ns data path, 17 levels, slack −2.672 ns. The single-cycle 32×32 multiply is only 0.06 ns behind the branch path, so fixing either one alone gains almost nothing.
+
+**Known fixes (not implemented):**
+- A dedicated branch comparator on the forwarded operands, in parallel with the ALU, instead of the ALU subtract and zero flag. Also replicating the high-fanout operand nets.
+- Registering the multiplier (use the DSP48E1 M/P registers) and stalling one cycle on MUL, the same way the SIMD inputs were registered.
+
+Both are needed together to move Fmax meaningfully. The gain is not measured.
+
+**Correction:** earlier versions of this file listed the BHT → `predict_taken` → `pc_next` → I-cache prefetch path (13.476 ns, 21 logic levels) as the critical path. The 79 MHz routed report does not show that path among its worst paths. That number most likely came from the earlier 73 MHz run.
 
 ---
 
@@ -92,7 +105,7 @@ The BHT array is read combinationally through a 64:1 mux tree. The result feeds 
 
 `data[1024]` (1024×32, 4 KB) maps to RAM64M×176 distributed RAM. 0 Block RAM Tiles.
 
-Root cause: Port B `always_ff` requires a conditional bypass (`write_merge` forwarding) for write-hit coherence. Vivado requires an unconditional synchronous read for BRAM inference. Removing the bypass creates a combinational loop through `write_merge → cached_word_q → write_merge`. See `Known_limitations.md`.
+Root cause: Port B `always_ff` requires a conditional bypass (`write_merge` forwarding) for write-hit coherence. Vivado requires an unconditional synchronous read for BRAM inference. Removing the bypass creates a combinational loop through `write_merge → cached_word_q → write_merge`.
 
 ### ISRAM / DSRAM (`axi4_lite_sram_sub`) — not applicable
 
@@ -104,7 +117,7 @@ Both instances are 256×32 (1 KB each). Read path is combinational; BRAM inferen
 
 **Test suite:** 34/34 pass (`make test-all`)
 
-### 4×4 INT8 GEMM Benchmark (`make sim MODULE=matmul`)
+### 4×4 UINT8 GEMM Benchmark (`make sim MODULE=matmul`)
 
 Instruction counter uses corrected PMU: `instr_retired = wb_reg_we && !mem_wb_stall` (prior to this fix, stall cycles were counted as extra retirements, inflating instruction counts).
 
