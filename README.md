@@ -187,6 +187,24 @@ Instruction counts measured with corrected PMU (`instr_retired` gated by `!mem_w
 
 ---
 
+## Black Hole Ray Tracer Workload
+
+<img src="blackhole/out/blackhole_cpu.png" alt="Black hole rendered by the CPU" width="256" align="right">
+
+[`blackhole/`](blackhole/) is a general-relativity ray tracer written in 228 RISC-V instructions. It renders a 64×64 Schwarzschild black hole on `top_pipeline` in simulation and sends the image out over the UART. It stresses the multiplier, divider, branch predictor, caches and UART together for 5.47M cycles, which the matmul benchmarks don't.
+
+- **Fits 1 KB memories:** Q8.24 fixed point, leapfrog integration, CORDIC for sin/cos, and a radial-symmetry table (89 rays traced instead of 4,096).
+- **Bit-exact:** all 4,096 bytes from the UART must match `blackhole_ref.py`, a Python copy of the same integer algorithm. The shadow edge must also land on GR's critical impact parameter, b = 3√3 M.
+- **Found a real bug:** DIV in the pipeline returned the previous quotient because the divider didn't stall on its issue cycle. The divider's own unit test couldn't see it. Fixed in [438f6cb](https://github.com/abishekmatevannan-afk/riscv-rv32im-gemm/commit/438f6cb), with `tb_div_pipeline` as the regression test.
+
+| Cycles | Instructions | CPI | Branch mispredicts | D$ misses | I$ misses |
+|--------|--------------|-----|--------------------|-----------|-----------|
+| 5,468,472 | 4,039,097 | 1.354 | 2.63% | 51 | 58 |
+
+Run it with `cd blackhole && make`. See [`blackhole/README.md`](blackhole/README.md) for the physics and how it's built.
+
+---
+
 ## FPGA Implementation
 
 **Target:** Xilinx Artix-7 xc7a200tsbg484-2 · **Tool:** Vivado 2025.2 · **Constraint:** 100 MHz
@@ -361,6 +379,7 @@ riscv-rv32im-gemm/
 │   ├── pmacc_test.hex               # PMACC forwarding paths test
 │   ├── psra_prelu_test.hex          # PSRA/PRELU forwarding paths test
 │   └── matmul_16x16_systolic.hex    # 16×16 tiled matmul, accumulate mode
+├── blackhole/                       # GR black hole ray tracer workload (asm, assembler, model, tb)
 └── Makefile
 ```
 
