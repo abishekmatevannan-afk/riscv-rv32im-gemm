@@ -173,8 +173,11 @@ module icache (
                     end
                 end
 
+                // Hold the filled word until IF/ID can take it. If the pipeline
+                // is stalled here, leaving DONE would drop the word and the next
+                // "hit" would return data_q, which was prefetched before the fill.
                 DONE: begin
-                    state <= IDLE;
+                    if (!pc_stall_i) state <= IDLE;
                 end
 
             endcase
