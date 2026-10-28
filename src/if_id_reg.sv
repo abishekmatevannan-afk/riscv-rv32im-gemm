@@ -15,7 +15,8 @@ module if_id_reg (
     output logic [31:0] id_pc,      // PC to decode stage
     output logic [31:0] id_instr,   // instruction to decode stage
     output logic        id_predict_taken,  // prediction to decode stage
-    output logic [31:0] id_predict_target  // predicted target to decode stage
+    output logic [31:0] id_predict_target, // predicted target to decode stage
+    output logic        id_valid           // 0 for a flushed/reset bubble, 1 for a fetched instruction
 );
 
     // NOP = addi x0, x0, 0 = 0x00000013
@@ -27,11 +28,13 @@ module if_id_reg (
             id_instr          <= NOP;
             id_predict_taken  <= 0;
             id_predict_target <= 32'd0;
+            id_valid          <= 0;
         end else if (!stall) begin
             id_pc             <= if_pc;
             id_instr          <= if_instr;
             id_predict_taken  <= if_predict_taken;
             id_predict_target <= if_predict_target;
+            id_valid          <= 1;
         end
         // if stall: hold current values (do nothing)
     end

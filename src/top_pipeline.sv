@@ -633,7 +633,8 @@ module top_pipeline #(
         .id_pc             (id_pc),
         .id_instr          (id_instr),
         .id_predict_taken  (id_predict_taken),
-        .id_predict_target (id_predict_target)
+        .id_predict_target (id_predict_target),
+        .id_valid          (id_valid)
     );
 
 
@@ -701,8 +702,6 @@ module top_pipeline #(
     // PMACC: custom opcode 0001011 (SIMD), funct3=011
     assign id_is_pmacc = (id_opcode == 7'b0001011) && (id_funct3 == 3'b011);
     assign ex_is_pmacc = is_simd && (ex_funct3 == 3'b011);
-
-    assign id_valid = 1'b1;
 
     register_file RF (
         .clk (clk),
@@ -933,12 +932,14 @@ module top_pipeline #(
         .forward_acc  (forward_acc)
     );
 
+    // A trapping instruction must not commit: kill its register and memory
+    // writes here so it never reaches MEM/WB. MRET re-executes it from mepc.
     ex_mem_reg EX_MEM (
         .clk           (clk),
         .rst           (rst),
-        .ex_reg_we     (ex_reg_we),
-        .ex_mem_we     (ex_mem_we),
-        .ex_mem_re     (ex_mem_re),
+        .ex_reg_we     (ex_reg_we && !trap),
+        .ex_mem_we     (ex_mem_we && !trap),
+        .ex_mem_re     (ex_mem_re && !trap),
         .ex_wb_sel     (ex_wb_sel),
         .ex_funct3     (ex_funct3),
         .ex_alu_result (ex_result),
@@ -1083,18 +1084,21 @@ module top_pipeline #(
 
     assign ext_irq = uart_irq;
 
+    // CSR state commits only on the cycle the EX instruction advances. During a
+    // stall the trap/CSR write is held, so an interrupt can't clear MIE mid-stall
+    // and then vanish before the pipeline redirects to mtvec.
     csr_regfile CSRS (
         .clk          (clk),
         .rst          (rst),
-        .csr_we       (ex_csr_we),
+        .csr_we       (ex_csr_we && !ex_mem_stall),
         .csr_addr     (ex_csr_addr),
         .csr_wd       (ex_fwd_a),
         .csr_funct3   (ex_csr_funct3[1:0]),
         .csr_rd       (csr_rd),
-        .trap         (trap),
+        .trap         (trap && !ex_mem_stall),
         .trap_cause   (trap_cause),
         .trap_epc     (trap_epc),
-        .mret         (ex_mret),
+        .mret         (ex_mret && !ex_mem_stall),
         .ext_irq      (ext_irq),
         .mtvec_out    (mtvec_out),
         .mepc_out     (mepc_out),

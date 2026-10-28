@@ -78,14 +78,9 @@ module exception_unit (
         trap_cause = 32'd0;
         trap_epc   = ex_pc;
 
-        if (!ex_valid) begin
-            // bubble in EX — only interrupts can fire
-            if (take_interrupt) begin
-                trap       = 1;
-                trap_cause = 32'h8000000B;  // machine external interrupt
-                trap_epc   = ex_pc;
-            end
-        end else begin
+        // A bubble in EX has no PC to return to, so nothing traps on it.
+        // A pending interrupt waits for the next real instruction.
+        if (ex_valid) begin
             // priority order
             if (take_interrupt) begin
                 trap       = 1;

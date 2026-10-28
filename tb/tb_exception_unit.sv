@@ -113,11 +113,12 @@ module tb_exception_unit;
         check("interrupt beats illegal", 1, 32'h8000000B);
         ex_illegal = 0; ext_irq = 0; mie_global = 0; meie = 0;
 
-        // TEST 12: ex_valid=0 — only interrupt fires, not illegal
+        // TEST 12: ex_valid=0 — a bubble never traps (it has no PC for mepc);
+        // a pending interrupt waits for the next real instruction
         ex_valid = 0; ex_illegal = 1;
         check("bubble: illegal suppressed", 0, 32'd0);
         ext_irq = 1; mie_global = 1; meie = 1;
-        check("bubble: interrupt still fires", 1, 32'h8000000B);
+        check("bubble: interrupt deferred", 0, 32'd0);
         ex_valid = 1; ex_illegal = 0; ext_irq = 0; mie_global = 0; meie = 0;
 
         $display("\n========== DONE ==========");
