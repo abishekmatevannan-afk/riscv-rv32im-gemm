@@ -78,7 +78,11 @@ module tb_mul_div;
         check_mul(32'hFFFFFFFF,   32'd2,          3'b001, 32'hFFFFFFFF,   "MULH -1*2 upper");
 
         // MULHSU: upper 32 bits, signed*unsigned
-        check_mul(32'hFFFFFFFF,   32'hFFFFFFFF,   3'b010, 32'hFFFFFFFE,   "MULHSU -1*UINT_MAX upper");
+        // -1 * (2^32-1) = -(2^32-1) = 0xFFFFFFFF_00000001, so the upper word is 0xFFFFFFFF.
+        // (This used to expect 0xFFFFFFFE, the unsigned*unsigned answer, which hid
+        // the MULHSU signedness bug; riscv-tests rv32um-mulhsu case 33 checks it.)
+        check_mul(32'hFFFFFFFF,   32'hFFFFFFFF,   3'b010, 32'hFFFFFFFF,   "MULHSU -1*UINT_MAX upper");
+        check_mul(32'h80000000,   32'hFFFF8000,   3'b010, 32'h80004000,   "MULHSU INT_MIN*0xFFFF8000 upper");
 
         // MULHU: upper 32 bits, unsigned*unsigned
         check_mul(32'hFFFFFFFF,   32'hFFFFFFFF,   3'b011, 32'hFFFFFFFE,   "MULHU UINT_MAX^2 upper");

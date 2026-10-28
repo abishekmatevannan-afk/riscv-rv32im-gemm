@@ -38,7 +38,10 @@ module mul_div_unit (
     logic [63:0] prod_uu;
 
     assign prod_ss = $signed(a) * $signed(b);
-    assign prod_su = $signed(a) * b;
+    // MULHSU: a signed, b unsigned. Mixing $signed(a) with unsigned b would make
+    // Verilog evaluate the whole product as unsigned, so widen both to 33-bit
+    // signed operands instead (a sign-extended, b zero-extended).
+    assign prod_su = $signed({a[31], a}) * $signed({1'b0, b});
     assign prod_uu = a * b;
 
     // ── Divider (sequential, restoring algorithm) ─────────────────────────
