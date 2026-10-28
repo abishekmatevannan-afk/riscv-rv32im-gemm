@@ -20,7 +20,8 @@ INTEGRATION = top top_pipeline uart_integration uart_mem_map \
               pmacc_pipeline \
               psra_pipeline \
               matmul_16x16 \
-              fence_ebreak
+              fence_ebreak \
+              div_pipeline
 
 
 # make sim MODULE=<name>

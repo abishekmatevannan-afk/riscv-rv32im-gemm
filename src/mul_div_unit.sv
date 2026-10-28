@@ -54,7 +54,10 @@ module mul_div_unit (
     logic [32:0] remainder;
     logic        neg_q, neg_r;
 
-    assign busy = (state == RUNNING);
+    // Busy also covers the cycle a divide arrives in EX (state still IDLE).
+    // Without that cycle the pipeline advanced immediately and EX/MEM captured
+    // the previous division's quotient instead of waiting for this one.
+    assign busy = (state == RUNNING) || (state == IDLE && start && funct3[2]);
 
     // One restoring-divider step: shift remainder left, try to subtract divisor
     wire [32:0] r_shifted = {remainder[31:0], op_a[31 - count]};
