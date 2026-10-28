@@ -1,6 +1,6 @@
-# RV32I+M RISC-V CPU Core
+# RISC-V RV32IM Core with GEMM Accelerators
 
-A complete RV32I+M RISC-V processor implemented in SystemVerilog with **up to 13.48× speedup on UINT8 matrix multiply** (parallel MAC accelerator), synthesized at **79 MHz** on Xilinx Artix-7 (xc7a200tsbg484-2, Vivado 2025.2). Features a 5-stage pipeline with full hazard handling, split 4KB L1 cache hierarchy backed by a 5-manager/5-subordinate AXI4-Lite fabric, 2-bit branch predictor, M-mode exception handling, memory-mapped UART, hardware performance counters, and two custom accelerators (parallel MAC array and output-stationary systolic array) with custom SIMD extensions. 4×4 UINT8 GEMM: **3.63× (SIMD)**, **13.48× (parallel MAC)**, **12.24× (systolic)** vs scalar RV32M · 14,084 LUTs · 1 BRAM.
+A complete RV32IM RISC-V processor implemented in SystemVerilog with **up to 13.48× speedup on unsigned 8-bit (UINT8) matrix multiply** (parallel MAC accelerator), synthesized at **79 MHz** on Xilinx Artix-7 (xc7a200tsbg484-2, Vivado 2025.2). Features a 5-stage pipeline with full hazard handling, split 4KB L1 cache hierarchy backed by a 5-manager/5-subordinate AXI4-Lite fabric, 2-bit branch predictor, M-mode exception handling, memory-mapped UART, hardware performance counters, and two custom accelerators (parallel MAC array and output-stationary systolic array) with custom SIMD extensions. 4×4 UINT8 GEMM: **3.63× (SIMD)**, **13.48× (parallel MAC)**, **12.24× (systolic)** vs scalar RV32M · 14,084 LUTs · 1 BRAM.
 
 
 ---
@@ -80,7 +80,7 @@ Signals: `if_pc`, `ex_branch`, `ex_predict_taken`, `ex_branch_taken`, `mispredic
 ## Features
 
 ### RV32I + RV32M Base ISA
-All 37 base integer instructions (R, I, S, B, U, J formats). Hardware multiply/divide unit: MUL, MULH, MULHU, MULHSU, DIV, DIVU, REM, REMU, using a 32-cycle restoring divider and a combinational multiplier that maps to DSP48 on Xilinx targets.
+All 40 base integer instructions (R, I, S, B, U, J formats plus FENCE, ECALL, EBREAK). Hardware multiply/divide unit: MUL, MULH, MULHU, MULHSU, DIV, DIVU, REM, REMU, using a 32-cycle restoring divider and a combinational multiplier that maps to DSP48 on Xilinx targets.
 
 ### 5-Stage Pipeline
 - **Data forwarding**: EX/MEM and MEM/WB paths for rs1/rs2, plus a dedicated acc forwarding path for PMACC (gated on `ex_is_pmacc` to prevent false forwards)
@@ -97,7 +97,7 @@ All 37 base integer instructions (R, I, S, B, U, J formats). Hardware multiply/d
 Both caches back onto the AXI4-Lite fabric via dedicated manager modules.
 
 ### AXI4-Lite Memory Fabric (5M/5S)
-Address-decoded crossbar connecting five managers (icache, dcache, IO, parallel MAC, systolic array) to five subordinates:
+Point-to-point interconnect: each of the five managers (icache, dcache, IO, parallel MAC, systolic array) has its own dedicated subordinate, so no arbitration is needed. The MEM stage decodes each load or store address to choose the manager:
 
 | Subordinate | Address | Description |
 |-------------|---------|-------------|
@@ -156,7 +156,7 @@ Any violation fires `$error` during simulation, and `make test-all` catches it a
 
 ### Hardware Accelerators
 
-**Parallel MAC** (`0xFFFE0000`): 4×4 systolic PE grid where all 16 PEs fire in parallel each k-step. Computes a full 4×4 UINT8 GEMM in 4 cycles. Supports:
+**Parallel MAC** (`0xFFFE0000`): 4×4 PE grid where all 16 PEs fire in parallel each k-step. Computes a full 4×4 UINT8 GEMM in 4 cycles. Supports:
 - Tile-K accumulation (CTRL bit 1 preserves `c_acc` across passes for K > 4)
 - Requantization: `saturate_uint8((c_acc >> scale_shift) + zero_point)`
 - Raw INT32 readback at `0xFFFE0080–0xFFFE00BC`
@@ -167,7 +167,7 @@ Any violation fires `$error` during simulation, and `make test-all` catches it a
 
 ## Benchmark Results
 
-4×4 INT8 GEMM (`make sim MODULE=matmul`), measured via hardware PMU:
+4×4 UINT8 GEMM (`make sim MODULE=matmul`), measured via hardware PMU:
 
 | Version | Cycles | Instrs | CPI | Speedup |
 |---------|--------|--------|-----|---------|
@@ -283,18 +283,18 @@ End-to-end systolic array transaction over AXI: operand matrices are loaded via 
 | `0xFFFD0000` | Systolic Array registers |
 | `0xFFFD0030` | Systolic SCALE_SHIFT (5-bit) |
 | `0xFFFD0034` | Systolic ZERO_POINT (8-bit) |
-| `0xFFFD0080` | Systolic C_INT32 readback (16 × 4B) |
+| `0xFFFD0080` | Systolic C_UINT32 readback (16 × 4B) |
 | `0xFFFE0000` | Parallel MAC registers |
 | `0xFFFE0030` | Parallel MAC SCALE_SHIFT |
 | `0xFFFE0034` | Parallel MAC ZERO_POINT |
-| `0xFFFE0080` | Parallel MAC C_INT32 readback (16 × 4B) |
+| `0xFFFE0080` | Parallel MAC C_UINT32 readback (16 × 4B) |
 
 ---
 
 ## Project Structure
 
 ```
-rv32i-core-cpu/
+riscv-rv32im-gemm/
 ├── src/
 │   ├── top_pipeline.sv              # 5-stage pipeline top level
 │   ├── top.sv                       # Single-cycle top (regression baseline)
@@ -307,13 +307,13 @@ rv32i-core-cpu/
 │   ├── alu.sv
 │   ├── simd_alu.sv                  # PADD PSUB PMUL PDOT PMACC PSRA PRELU
 │   ├── mul_div_unit.sv              # RV32M: MUL/DIV/REM
-│   ├── control_unit.sv              # All RV32I+M+custom opcodes
+│   ├── control_unit.sv              # All RV32IM + custom opcodes
 │   ├── forward_unit.sv              # rs1/rs2/acc forwarding
 │   ├── hazard_unit.sv               # load-use stall, PMACC acc stall
 │   ├── branch_predictor.sv          # 2-bit BHT + BTB
 │   ├── dcache.sv                    # 4KB direct-mapped WB/WA
 │   ├── icache.sv                    # 4KB direct-mapped read-only
-│   ├── axi4_lite_interconnect.sv    # 5M/5S address-decoded crossbar
+│   ├── axi4_lite_interconnect.sv    # 5M/5S point-to-point interconnect
 │   ├── axi4_lite_icache_manager.sv
 │   ├── axi4_lite_dcache_manager.sv
 │   ├── axi4_lite_accel_manager.sv   # shared by both accelerators
@@ -345,7 +345,8 @@ rv32i-core-cpu/
 │   ├── tb_icache.sv
 │   ├── tb_axi4_lite.sv
 │   ├── tb_uart_rx.sv
-│   ├── tb_uart_tx.sv (or tb_uart_mem_map.sv)
+│   ├── tb_uart_tx.sv
+│   ├── tb_uart_mem_map.sv
 │   ├── tb_exception_test.sv
 │   ├── tb_exception_handler_stack.sv
 │   ├── tb_mul_div.sv
@@ -383,7 +384,15 @@ sudo apt install iverilog
 make test-all
 ```
 
-Expected: `34 passed   0 failed`
+Expected: `37 passed   0 failed`
+
+### Run the official RISC-V ISA tests
+
+```bash
+make riscv-tests
+```
+
+Expected: `48 passed   0 failed`. The test programs are prebuilt in `programs/riscv-tests/`, so this only needs Icarus Verilog. To rebuild them from source, install a RISC-V GCC (e.g. [xPack riscv-none-elf-gcc](https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases)) and run `make riscv-tests-build`.
 
 ### Run individual module tests
 
@@ -428,9 +437,9 @@ make wave MODULE=pmacc_pipeline
 | Module | Tests | Status |
 |--------|-------|--------|
 | ALU | All RV32I operations | ✅ |
-| MUL/DIV | RV32M MUL/MULH/DIV/REM variants | ✅ |
+| MUL/DIV | RV32M MUL/MULH/DIV/REM variants (unit + in-pipeline) | ✅ |
 | Register file | 3-port read, x0 hardwired | ✅ |
-| Control unit | All RV32I+M+custom opcodes | ✅ |
+| Control unit | All RV32IM + custom opcodes | ✅ |
 | Forward unit | EX/MEM, MEM/WB, acc (PMACC) | ✅ |
 | Hazard unit | load-use, branch flush, PMACC acc stall | ✅ |
 | SIMD ALU | PADD/PSUB/PMUL/PDOT/PMACC/PSRA/PRELU | ✅ |
@@ -445,12 +454,41 @@ make wave MODULE=pmacc_pipeline
 | Systolic Array | Same suite at 0xFFFD | ✅ |
 | UART TX/RX | 8N1 framing, FIFO, IRQ | ✅ |
 | Exception handling | ECALL, MRET, illegal, IRQ, stack save/restore | ✅ |
+| Precise traps | IRQ on a bubble resumes at a real PC, interrupted instruction runs once, misaligned store doesn't write memory | ✅ |
 | Performance counters | All 8 counters via PMU | ✅ |
 | 16×16 tiled matmul | Accumulate mode (CTRL bit 1), 4 K-passes → C[i][j]=16 | ✅ |
 | Single-cycle CPU | Regression baseline | ✅ |
 | Pipelined CPU | test1, test2, exception, matmul | ✅ |
 | SVA assertions | forwarding one-hot, x0 invariant, load-use→stall, AXI awvalid sticky (all 4 channels) | ✅ |
-| **Total** | **34 testbenches** | **34/34** |
+| PE cell (ASIC) | reset, en=0 hold, PDOT cross-validation, K-tile chain, signed/unsigned discriminator | ✅ |
+| **Total** | **37 testbenches** | **37/37** |
+
+### ISA compliance: official riscv-tests
+
+The core passes the official [riscv-tests](https://github.com/riscv-software-src/riscv-tests) `rv32ui` and `rv32um` suites: **48/48**. That's every RV32I and RV32M instruction, plus the `ld_st`/`st_ld` load/store ordering tests.
+
+| Suite | Tests | Result |
+|-------|-------|--------|
+| rv32ui (base integer) | 40 | 40/40 ✅ |
+| rv32um (multiply/divide) | 8 | 8/8 ✅ |
+
+How it runs:
+- `scripts/build_riscv_tests.sh` builds each test against a small machine-mode environment (`tests/riscv/env/riscv_test.h`) instead of riscv-tests' `env/p`, because this core is Harvard and M-mode only.
+- The linker script (`tests/riscv/link.ld`) puts code at 0x0000 (ISRAM) and data at 0x2000 (DSRAM). The script splits the ELF into one hex file per memory.
+- Each test reports by storing to `TOHOST` (0x3FFC). `tests/riscv/tb_riscv_tests.sv` catches that store in the MEM stage, before the write-back D$, so a result can't get stuck in the cache.
+- The harness was checked against a program that deliberately fails at test case 3 and one that never finishes. They report `FAIL (test case 3)` and `TIMEOUT`, so a `PASS` can't happen by accident.
+- riscv-tests is pinned to commit `7b68f7b` for reproducibility.
+
+**Excluded:**
+- `fence_i`, because self-modifying code needs a writable instruction memory and ISRAM is read-only in this Harvard design.
+- `ma_data`, because misaligned loads/stores trap instead of completing. Hardware support is optional in the spec.
+
+**Bugs these tests found** (all fixed). The first three never showed up in the existing testbenches because their DSRAM always starts zeroed, so every refilled line was zeros:
+
+1. **D$ refill wrote each word one slot off.** `mem_rd` is combinational from the registered `mem_addr`, so it lags `fill_word` by a cycle. Word *k* of the line received word *k−1*'s data, and the last word was never written. The fix indexes the refill write by `mem_addr[3:2]`, with the same 5-cycle refill.
+2. **Loads that missed returned the raw word.** On a miss, `cpu_rd` returned the refilled 32-bit word without the byte/halfword select and sign extension the hit path applies, so `lb`/`lbu`/`lh`/`lhu` misses returned the wrong value.
+3. **`sb`/`sh` store misses overwrote the whole word.** After the refill, the store wrote the full `rs2` value instead of merging the byte or halfword into the refilled word.
+4. **MULHSU computed unsigned × unsigned.** In `$signed(a) * b`, the unsigned operand makes Verilog evaluate the whole product as unsigned. Both operands are now widened to 33-bit signed (a sign-extended, b zero-extended). `tb_mul_div` had expected the buggy value (`0xFFFFFFFE` for −1 × 0xFFFFFFFF), so its expected value was corrected to `0xFFFFFFFF`.
 
 ---
 
@@ -458,8 +496,10 @@ make wave MODULE=pmacc_pipeline
 
 - **Direct-mapped caches**: conflict misses for working sets that alias to the same cache index, so 2-way set associative is the natural next step.
 - **Direct-mapped BTB**: 64 entries indexed by PC[7:2], and a new branch evicts the old entry at the same index. The tag check (PC[31:8]) prevents wrong-path redirects but cannot prevent a high-traffic entry from being evicted by a colliding PC.
-- **FPGA synthesis**: Fmax, critical path analysis, and utilization breakdown in `SYNTHESIS.md`, with known timing and BRAM inference gaps in `Known_limitations.md`.
-- **dcache BRAM inference**: `data[]` maps to distributed RAM (RAM64M×176) instead of RAMB36E1, since write-hit forwarding creates a combinational loop that prevents unconditional BRAM read inference. See `Known_limitations.md`.
+- **FPGA synthesis**: Fmax, critical path analysis, and utilization breakdown in `SYNTHESIS.md`.
+- **No `fence.i` / self-modifying code**: ISRAM is read-only (Harvard), so riscv-tests `rv32ui-fence_i` is excluded.
+- **No misaligned loads/stores in hardware**: they trap, so riscv-tests `rv32ui-ma_data` is excluded.
+- **dcache BRAM inference**: `data[]` maps to distributed RAM (RAM64M×176) instead of RAMB36E1, since write-hit forwarding creates a combinational loop that prevents unconditional BRAM read inference. See `SYNTHESIS.md`.
 
 ---
 

@@ -115,7 +115,7 @@ Both instances are 256×32 (1 KB each). Read path is combinational; BRAM inferen
 
 ## Simulation Results
 
-**Test suite:** 34/34 pass (`make test-all`)
+**Test suite:** 37/37 pass (`make test-all`)
 
 ### 4×4 UINT8 GEMM Benchmark (`make sim MODULE=matmul`)
 
