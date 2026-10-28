@@ -1,4 +1,4 @@
-// 16x16 INT8 tiled matmul using systolic array accumulate mode.
+// 16x16 UINT8 tiled matmul using systolic array accumulate mode.
 // A = B = all-1s (16x16). Every 4x4 tile row = 0x01010101.
 //
 // One 4x4 tile K-pass: C[i][j] = sum(1*1, 4 terms) = 4.

@@ -119,7 +119,7 @@ module tb_systolic_array;
         // ----------------------------------------------------------------
         // TEST 2: INT32 readback + overflow saturation
         // A = all 100s, B = all 100s
-        // C_INT32[i][j] = 4 * 100 * 100 = 40000  (overflows INT8)
+        // C_INT32[i][j] = 4 * 100 * 100 = 40000  (overflows 8 bits)
         // scale_shift=0: c_row bytes = 0xFF (saturated)
         // scale_shift=9: 40000>>9 = 78 = 0x4E
         // ----------------------------------------------------------------

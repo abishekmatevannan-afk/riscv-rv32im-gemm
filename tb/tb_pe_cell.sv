@@ -82,7 +82,7 @@ module tb_pe_cell;
         rst = 1; @(posedge clk); #1; rst = 0;
         check("reset mid-run clears", 32'd0);
 
-        // --- Test 6: max INT8 × 4 stays within 32-bit acc ---
+        // --- Test 6: max UINT8 × 4 stays within 32-bit acc ---
         // 255*255 = 65025; ×4 = 260100 — fits comfortably in 32 bits
         tick(8'd255, 8'd255);
         tick(8'd255, 8'd255);

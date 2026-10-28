@@ -120,7 +120,7 @@ module tb_parallel_mac;
         // ----------------------------------------------------------------
         // TEST 2: INT32 readback + overflow saturation
         // A = all 100s, B = all 100s
-        // C_INT32[i][j] = 4 * 100 * 100 = 40000  (overflows INT8)
+        // C_INT32[i][j] = 4 * 100 * 100 = 40000  (overflows 8 bits)
         // With scale_shift=0: c_row bytes = 0xFF (saturated)
         // With scale_shift=9: 40000>>9 = 78 = 0x4E
         // ----------------------------------------------------------------
@@ -244,7 +244,7 @@ module tb_parallel_mac;
         if (rd == 32'd12) $display("PASS: C_INT32[0][3]=12");
         else              $display("FAIL: C_INT32[0][3] expected 12, got %0d", rd);
 
-        // INT8 packed check: c_row[0] = {12,10,8,6} = 0x0C0A0806
+        // UINT8 packed check: c_row[0] = {12,10,8,6} = 0x0C0A0806
         axi_read(32'hFFFE0040, rd);
         if (rd == 32'h0C0A0806)
             $display("PASS: C_ROW0=0x0C0A0806 (tile-K accumulate correct)");

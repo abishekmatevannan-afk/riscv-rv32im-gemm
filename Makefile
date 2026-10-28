@@ -1,4 +1,4 @@
-# Makefile for RV32I Core CPU
+# Makefile for the RISC-V RV32IM Core with GEMM Accelerators
 # All simulation output goes to sim/ which is created automatically if missing.
 
 SRC_DIR = src
@@ -63,7 +63,7 @@ wave:
 #   Output:  one line per module, then a totals summary at the bottom
 test-all:
 	@echo "========================================================"
-	@echo "  RV32I Core — Full Test Suite"
+	@echo "  RISC-V RV32IM Core: Full Test Suite"
 	@echo "========================================================"
 	@pass=0; fail=0; \
 	for tb in $(TB_DIR)/tb_*.sv; do \

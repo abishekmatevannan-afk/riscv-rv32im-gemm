@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-// Pipeline integration test: 16x16 tiled INT8 matmul via systolic array accumulate mode.
+// Pipeline integration test: 16x16 tiled UINT8 matmul via systolic array accumulate mode.
 //
 // A = B = all-1s (16x16). Tiled as 16 output tiles of 4x4, each with 4 K-passes.
 // The program exercises CTRL bit[1] (accumulate mode) — first K-pass clears c_acc,

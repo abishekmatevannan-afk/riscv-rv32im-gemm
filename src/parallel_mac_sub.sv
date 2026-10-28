@@ -1,4 +1,4 @@
-// 4x4 INT8 Parallel MAC Matrix Multiply Accelerator
+// 4x4 UINT8 Parallel MAC Matrix Multiply Accelerator
 // AXI4-Lite subordinate at base address 0xFFFE0000
 //
 // Register map (offset from base):
