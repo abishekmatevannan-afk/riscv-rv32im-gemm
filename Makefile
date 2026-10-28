@@ -97,6 +97,46 @@ test-all:
 	test $$fail -eq 0
 
 
+# make riscv-tests
+# Run the official riscv-tests (rv32ui + rv32um) on top_pipeline.
+# Compiles tests/riscv/tb_riscv_tests.sv once, then runs it per program in
+# programs/riscv-tests/ and prints one line per test plus totals.
+# Exits nonzero if any test fails, times out, or produces no result.
+#   Example: make riscv-tests
+#   Debug one test with a waveform:
+#     vvp sim/riscv_tests.vvp +imem=programs/riscv-tests/rv32ui-add.imem.hex \
+#         +dmem=programs/riscv-tests/rv32ui-add.dmem.hex +vcd=sim/riscv_add.vcd
+RISCV_TESTS_DIR = programs/riscv-tests
+
+riscv-tests:
+	@compile_out=$$(iverilog -g2012 -o $(SIM_DIR)/riscv_tests.vvp \
+		tests/riscv/tb_riscv_tests.sv $(SRC_DIR)/*.sv 2>&1) || \
+		{ echo "COMPILE ERROR"; echo "$$compile_out"; exit 1; }
+	@echo "========================================================"
+	@echo "  riscv-tests: rv32ui + rv32um"
+	@echo "========================================================"
+	@pass=0; fail=0; \
+	for imem in $(RISCV_TESTS_DIR)/*.imem.hex; do \
+		name=$$(basename $$imem .imem.hex); \
+		printf "  %-24s" "$$name"; \
+		result=$$(vvp -n $(SIM_DIR)/riscv_tests.vvp +imem=$$imem \
+			+dmem=$(RISCV_TESTS_DIR)/$$name.dmem.hex 2>&1 | grep -E "^(PASS|FAIL|TIMEOUT)"); \
+		echo "$${result:-NO RESULT}"; \
+		case "$$result" in PASS*) pass=$$((pass + 1)) ;; *) fail=$$((fail + 1)) ;; esac; \
+	done; \
+	echo "========================================================"; \
+	echo "  $$pass passed   $$fail failed"; \
+	echo "========================================================"; \
+	test $$fail -eq 0
+
+
+# make riscv-tests-build
+# Regenerate programs/riscv-tests/ from source. Needs a RISC-V GCC toolchain
+# (see scripts/build_riscv_tests.sh). Not needed just to run the tests.
+riscv-tests-build:
+	scripts/build_riscv_tests.sh
+
+
 # make all
 # Run every testbench with full verbose output — no pass/fail filtering,
 # everything gets printed. Useful when you want to read raw simulation output
@@ -122,4 +162,4 @@ clean:
 	rm -f $(SIM_DIR)/*.vvp $(SIM_DIR)/*.vcd
 
 
-.PHONY: sim wave test-all all clean
+.PHONY: sim wave test-all riscv-tests riscv-tests-build all clean

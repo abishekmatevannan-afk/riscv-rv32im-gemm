@@ -23,3 +23,9 @@ rv32i_learning_guide.md
 *.bin # binary outputs
 sim/*.vcd # waveform dumps
 sim/*.vvp 
+
+# riscv-tests source checkout (scripts/build_riscv_tests.sh clones it)
+third_party/
+
+# black hole renderer, kept local for now
+blackhole/

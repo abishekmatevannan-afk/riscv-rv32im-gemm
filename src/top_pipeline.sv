@@ -4,7 +4,11 @@
 
 module top_pipeline #(
     parameter HEX_FILE = "programs/test1.hex",
-    parameter CLKS_PER_BIT = 10416
+    parameter CLKS_PER_BIT = 10416,
+    // SRAM sizes in 32-bit words. Defaults match the synthesized design;
+    // tb_riscv_tests raises them to fit the riscv-tests programs.
+    parameter IMEM_DEPTH_WORDS = 256,
+    parameter DMEM_DEPTH_WORDS = 256
 )(
     input logic clk,
     input logic rst,
@@ -525,7 +529,7 @@ module top_pipeline #(
 
     // ISRAM: read-only instruction SRAM, initialized from HEX_FILE
     axi4_lite_sram_sub #(
-        .DEPTH_WORDS(256),
+        .DEPTH_WORDS(IMEM_DEPTH_WORDS),
         .HEX_FILE   (HEX_FILE),
         .READ_ONLY  (1)
     ) ISRAM (
@@ -541,7 +545,7 @@ module top_pipeline #(
 
     // DSRAM: read/write data SRAM, zero-initialized
     axi4_lite_sram_sub #(
-        .DEPTH_WORDS(256),
+        .DEPTH_WORDS(DMEM_DEPTH_WORDS),
         .HEX_FILE   (""),
         .READ_ONLY  (0)
     ) DSRAM (
