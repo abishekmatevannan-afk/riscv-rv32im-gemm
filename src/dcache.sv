@@ -116,9 +116,12 @@ module dcache (
     end
 
     // Port A address mux
+    // During FILL, mem_rd is the word at the registered mem_addr (it lags
+    // fill_word by one cycle), so the refill writes the word mem_addr points at.
     always_comb begin
         case (state)
             IDLE, DONE: portA_addr = {addr_idx, word_off};
+            FILL:       portA_addr = {addr_idx, mem_addr[3:2]};
             default:    portA_addr = {addr_idx, fill_word};
         endcase
     end
@@ -130,10 +133,8 @@ module dcache (
                     (state == DONE && pending_store);
         if (state == FILL)
             port_a_wd = mem_rd;
-        else if (state == DONE)
-            port_a_wd = cpu_wd;
         else
-            port_a_wd = write_merge;
+            port_a_wd = write_merge;   // DONE: store miss, merged into the refilled word
     end
 
     // Port A — write-only, no reset clause
@@ -145,8 +146,10 @@ module dcache (
     logic is_cacheable;
     assign is_cacheable = !is_io;
 
+    // Word being loaded from: the prefetched word on a hit, or the word
+    // captured during the refill on a miss (DONE).
     logic [31:0] cached_word;
-    assign cached_word = cached_word_q;
+    assign cached_word = (state == DONE) ? fill_wd_q : cached_word_q;
 
     logic [31:0] lb_00, lb_01, lb_10, lb_11;
     assign lb_00 = {{24{cached_word[7]}},  cached_word[7:0]};
@@ -183,13 +186,14 @@ module dcache (
     end
 
     assign cpu_rd = is_io                          ? mem_rd    :
-                    (state == DONE)                ? fill_wd_q :
+                    (state == DONE)                ? hit_rd    :
                     (hit && (cpu_re || !cpu_we))   ? hit_rd    :
                                                      32'd0;
 
-    // Full-word merge for write-hit
+    // Full-word merge for a store: into the prefetched word on a hit, or into
+    // the refilled word on a miss (DONE), so sb/sh keep the other bytes.
     always_comb begin
-        write_merge = cached_word_q;
+        write_merge = cached_word;
         case (cpu_funct3)
             3'b000: begin
                 case (byte_off)
@@ -278,15 +282,19 @@ module dcache (
                 end
 
                 FILL: begin
+                    // Issue word fill_word; mem_rd returns the word issued
+                    // last cycle, identified by mem_addr[3:2].
                     mem_re     <= 1;
                     mem_addr   <= {addr_tag, addr_idx, fill_word, 2'b00};
                     mem_funct3 <= 3'b010;
+                    if (fill_word != 2'b11)
+                        fill_word <= fill_word + 1;
                     if (!fill_wait) begin
                         fill_wait <= 1;
                     end else begin
-                        if (fill_word == word_off)
+                        if (mem_addr[3:2] == word_off)
                             fill_wd_q <= mem_rd;
-                        if (fill_word == 2'b11) begin
+                        if (mem_addr[3:2] == 2'b11) begin
                             valid[addr_idx] <= 1;
                             tags[addr_idx]  <= addr_tag;
                             fill_word       <= 0;
@@ -296,8 +304,6 @@ module dcache (
                                 pending_store   <= 1;
                             end
                             state <= DONE;
-                        end else begin
-                            fill_word <= fill_word + 1;
                         end
                     end
                 end
