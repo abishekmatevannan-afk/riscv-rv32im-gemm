@@ -35,61 +35,29 @@ This project is far from done. There is still so much to fix and learn, like imp
 ## Architecture
 
 ```mermaid
-flowchart TD
-    subgraph Pipeline["5-Stage Pipeline"]
-        IF["IF\nFetch + Predict"]
-        ID["ID\nDecode + CSR"]
-        EX["EX\nExecute + Exception"]
-        MEM["MEM\nCache / IO"]
-        WB["WB\nWriteback"]
-        IF --> ID --> EX --> MEM --> WB
+flowchart LR
+    subgraph CPU["RV32IM core"]
+        direction LR
+        IF["IF"] --> ID["ID"] --> EX["EX"] --> MEM["MEM"] --> WB["WB"]
+        IC["I-cache<br>4 KB"]
+        DC["D-cache<br>4 KB, write-back"]
+        PMU["Perf counters<br>0xFFFF2000"]
+        IF --> IC
+        MEM --> DC
+        MEM --> PMU
     end
 
-    subgraph Hazards["Hazard Control"]
-        HU["Hazard Unit\nload-use · branch flush\ncache stall · trap flush\nPMACC acc stall"]
-        FU["Forward Unit\nEX/MEM → EX\nMEM/WB → EX\nacc port (PMACC)"]
-        BP["Branch Predictor\n2-bit BHT · BTB\n64 entries"]
-    end
+    XBAR["AXI4-Lite interconnect<br>5 managers, 5 subordinates"]
+    ISRAM["Instruction SRAM"]
+    DSRAM["Data SRAM"]
+    UART["UART<br>0xFFFF0000"]
+    MAC["Parallel MAC<br>0xFFFE0000"]
+    SYS["Systolic array<br>0xFFFD0000"]
 
-    subgraph Caches["L1 Cache Hierarchy"]
-        IC["I$ 4KB\ndirect-mapped\nread-only"]
-        DC["D$ 4KB\ndirect-mapped\nwrite-back\nwrite-allocate"]
-    end
-
-    subgraph Fabric["AXI4-Lite Fabric\n5M · 5S"]
-        XBAR["Interconnect"]
-        ISRAM["ISRAM\n(parameterized)"]
-        DSRAM["DSRAM\n(parameterized)"]
-        PMAC["Parallel MAC\n0xFFFE0000\n4×4 PE grid, 4-cycle"]
-        SYS["Systolic Array\n0xFFFD0000\nwavefront, 11-cycle"]
-    end
-
-    subgraph IO["Memory-Mapped IO"]
-        UART["UART TX/RX\n0xFFFF0000\n8N1, IRQ"]
-        PMU["PMU\n0xFFFF2000\n8 counters"]
-        CSR["CSR File\nmtvec · mepc\nmcause · mstatus"]
-        EXC["Exception Unit\nECALL · IRQ\nillegal · misalign"]
-    end
-
-    subgraph Exec["Execution Units"]
-        ALU["ALU 32-bit"]
-        MUL["MUL/DIV\nRV32M"]
-        SIMD["SIMD ALU\nPADD · PSUB · PMUL\nPDOT · PMACC\nPSRA · PRELU"]
-        RF["Register File\n32 × 32-bit\n3 read ports"]
-    end
-
-    IF --> IC
-    IC --> Fabric
-    MEM --> DC
-    DC --> Fabric
-    EX --> ALU & MUL & SIMD
-    ID --> RF
-    WB --> RF
-    MEM --> UART & PMU & PMAC & SYS
-    EX --> EXC --> CSR
-    HU -.stall/flush.-> IF & ID & EX
-    FU -.forward.-> EX
-    BP -.predict.-> IF
+    IC --> XBAR
+    DC --> XBAR
+    MEM -- "uncached IO and accelerators" --> XBAR
+    XBAR --> ISRAM & DSRAM & UART & MAC & SYS
 ```
 
 ---
