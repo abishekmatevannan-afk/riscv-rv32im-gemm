@@ -243,11 +243,11 @@ Two designs taken through an open-source ASIC flow to compare with the FPGA impl
 |--------|------------------------|----------------------------------|
 | Target | xc7a200tsbg484-2 | sky130_fd_sc_hd |
 | Clock constraint | 10 ns (100 MHz) | 16 ns (62.5 MHz) |
-| Achieved result | 79 MHz (part of full design) | Closes at tt/ff corners, -0.370 ns short at ss corner |
-| Cell count | — (absorbed into 14,084 LUTs) | 1,081 standard cells |
-| Area | — | 6,831.55 µm² |
+| Achieved result | 79 MHz (part of full design) | Closes at all 9 PVT corners, +0.180 ns worst slack (ss, 100°C) |
+| Cell count | — (absorbed into 14,084 LUTs) | 706 standard cells (excluding fill) |
+| Area | — | 5,285.07 µm² std-cell, 7,607.30 µm² core |
 | Multiplier mapping | DSP48E1 for RV32M; accelerator PE multiplies in LUTs | Synthesized from standard cells |
-| Critical path | Branch resolution: forwarding → ALU compare → flush → I-cache valid (12.401 ns) | 8×8 multiply feeding 32-bit accumulate, single cycle |
+| Critical path | Branch resolution: forwarding → ALU compare → flush → I-cache valid (12.401 ns) | Input operand → 8×8 multiplier → product register (MAC pipelined into two stages) |
 | Output artifact | Bitstream | GDSII |
 
 ---
@@ -479,7 +479,7 @@ make wave MODULE=pmacc_pipeline
 | Single-cycle CPU | Regression baseline | ✅ |
 | Pipelined CPU | test1, test2, exception, matmul | ✅ |
 | SVA assertions | forwarding one-hot, x0 invariant, load-use→stall, AXI awvalid sticky (all 4 channels) | ✅ |
-| PE cell (ASIC) | reset, en=0 hold, PDOT cross-validation, K-tile chain, signed/unsigned discriminator | ✅ |
+| PE cell (ASIC) | reset, en=0 hold, PDOT cross-validation, K-tile chain, signed/unsigned discriminator, product latency, en during reset, en bubbles | ✅ |
 | **Total** | **37 testbenches** | **37/37** |
 
 ### ISA compliance: official riscv-tests

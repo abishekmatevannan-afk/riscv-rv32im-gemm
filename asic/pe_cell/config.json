@@ -11,7 +11,9 @@
     "FP_CORE_UTIL": 50,
 
     "RUN_POST_GRT_RESIZER_TIMING": true,
-
+    "GRT_RESIZER_SETUP_SLACK_MARGIN": 0.3,
+    "EXTRA_EXCLUDED_CELLS": ["sky130_fd_sc_hd__clkdlybuf4s*", "sky130_fd_sc_hd__buf_1", "sky130_fd_sc_hd__clkbuf_1"],
+    "RUN_POST_GRT_DESIGN_REPAIR": true,
     "PDK": "sky130A",
     "STD_CELL_LIBRARY": "sky130_fd_sc_hd"
 }

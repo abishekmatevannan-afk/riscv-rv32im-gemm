@@ -28,21 +28,28 @@ wasn't worth fixing and improving since the ALU run's only purpose was proving t
 
 ![pe_cell placed-and-routed layout, full hierarchy, KLayout / Sky130](pe_cell/layout.png)
 
-A single output-stationary PE extracted from the 4×4 parallel MAC accelerator
-(`src/pe_cell.sv`). It is sequential where an 8×8 multiplier feeds a 32-bit accumulator
-register on every enabled cycle. This is the building block tiled 16 times in the
-hardware accelerator.
+A single output-stationary PE extracted from the 4×4 parallel MAC accelerator's
+compute loop (`src/pe_cell.sv`). It is a two-stage pipeline: an 8×8 multiplier
+writes a 16-bit product register, and the next cycle that product is added into
+a 32-bit accumulator register. `parallel_mac_sub.sv` doesn't instantiate this
+module, it writes the same multiply-add inline for all 16 PEs in a single cycle,
+so the pipelining described below applies to the ASIC module only.
 
-The RTL was verified  before touching LibreLane via `make sim MODULE=pe_cell`, which
-ran 7 of 7 passing tests (10 of 10 after the pipelining fix below), including a PDOT cross-validation against the full
+The RTL was verified before touching LibreLane via `make sim MODULE=pe_cell`, which
+runs 10 of 10 passing tests, including a PDOT cross-validation against the full
 pipeline testbench (expected 70, confirmed 70) and a signed/unsigned
 discriminator. Feeding `a=0xFF, b=0x02` and getting 510 confirms the module
 uses zero-extension and unsigned multiply, matching the original
 `parallel_mac_sub.sv` compute loop, since a signed version would have
-produced -2 instead.
+produced -2 instead. The other tests cover the one-cycle product latency,
+`en` held low, `en` held high during reset (must not be accumulated), and `en`
+toggling mid-stream.
 
-**Clock constraint:** 16 ns (62.5 MHz). See "What the timing result actually
-shows" below for why this is the number and why it isn't a clean pass.
+**Clock constraint:** 16 ns (62.5 MHz). Closes at all nine PVT corners,
+including the slow-process, 100°C corner. See "What the timing result actually
+shows" below for how it got there.
+
+The layout image above is from the earlier single-cycle run.
 
 ---
 
@@ -103,43 +110,106 @@ Results land in `asic/<design>/runs/RUN_<timestamp>/`.
 
 ## What the timing result actually shows
 
-The pe_cell closes cleanly at typical (`tt`) and fast-process (`ff`) corners at
-16 ns (62.5 MHz), with zero setup violations and positive slack. It does
-**not** close at the slow-process/high-temperature (`ss`) corner with the worst slack
-across the three `ss` sub-corners being **-0.370 ns** (nominal: -0.220 ns, min: -0.123 ns, max: -0.370 ns).
+### Before: single-cycle MAC
 
- The critical
-path (from `report_checks` at `max_ss_100C_1v60`) runs from an input operand
-bit (`b[7]`) through the multiplier's partial-product reduction tree
-(`maj3`/`xnor2`/`xor2` gates, the carry-save-adder signature) and directly into
-the accumulator's carry-propagate adder chain (`a211oi`/`o31ai`/`nor2`/`o311ai`/
-`and4` gates), landing on the accumulator's flip-flop, which is the entire 8×8 multiply feeding the 32-bit add as one unbroken combinational path in a single
-cycle, the expected bottleneck for a single-cycle MAC design.
+The original single-cycle pe_cell closed at typical (`tt`) and fast-process
+(`ff`) corners at 16 ns but **not** at the slow-process/100°C (`ss`) corners:
+worst slack -0.370 ns (nominal: -0.220 ns, min: -0.123 ns, max: -0.370 ns).
 
-**Ruled out as alternate explanations, and how:**
-- *Floorplan congestion.* A larger die (150×150, 35% utilization) was tested against the same 16 ns target, and worst-corner slack got measurably *worse* (-0.483 ns vs. -0.370 ns) instead of improving, which rules out routing congestion as the issue. T
-- *Clock-period sweep not converging linearly.* Slack improved from -4.35 ns
-  (10 ns period) to -0.370 ns (16 ns), then got *worse* at 17 ns (-0.567 ns).
-  That behavior, combined with the congestion test above,
-  shows the remaining gap is caused by a fixed gate delay through the multiply/add chain rather than anything a looser clock or more floorplan room can solve.
+The critical path (from `report_checks` at `max_ss_100C_1v60`) ran from an
+input operand bit (`b[7]`) through the multiplier's partial-product reduction
+tree (`maj3`/`xnor2`/`xor2` gates, the carry-save-adder signature) and directly
+into the accumulator's carry-propagate adder chain (`a211oi`/`o31ai`/`nor2`/
+`o311ai`/`and4` gates), landing on the accumulator's flip-flop: the entire 8×8
+multiply feeding the 32-bit add as one combinational path in a single cycle.
 
-**Fix (implemented in RTL, LibreLane re-run pending):** `src/pe_cell.sv` now
-pipelines the multiply and the accumulate into two separate cycles by
-registering the 16-bit product (`prod_q`) before it feeds the 32-bit adder,
-which breaks the single-cycle critical path at that boundary. A valid bit
-(`en_q`, reset to 0) travels with the product, so `prod_q` needs no reset or
-load enable, keeping a mux off the multiplier's D-input path. Each product now
-lands in `acc` one cycle after it is fed. `tb/tb_pe_cell.sv` was updated for
-the extra cycle and passes 10 of 10, including a test that `en` held high
-during reset is not accumulated. `parallel_mac_sub.sv` is unchanged, so the
-accelerator's 4-cycle compute and benchmark numbers still hold. The numbers
-above are from the single-cycle version.
+Two experiments from that phase, and what they actually show:
+- *Larger floorplan.* A 150×150 die at 35% utilization made worst-corner slack
+  *worse* (-0.483 ns vs. -0.370 ns), so routing congestion was not the problem.
+- *Clock-period sweep.* Slack improved from -4.35 ns (10 ns period) to
+  -0.370 ns (16 ns), then got *worse* at 17 ns (-0.567 ns). A fixed gate delay
+  would have improved by about 1 ns with the looser clock. Slack getting worse
+  means the flow built a different, slower netlist under the looser target.
+  The post-pipelining runs below found the cause: the repair steps' buffering
+  choices, which vary from run to run.
 
-**One caveat on the absolute number:** the critical path's first ~3.2 ns,
+### Step 1: pipeline the RTL
+
+`src/pe_cell.sv` registers the 16-bit product (`prod_q`) before it feeds the
+32-bit adder, so the multiply and the accumulate land in separate cycles. A
+valid bit (`en_q`, reset to 0) travels with the product, so `prod_q` needs no
+reset or load enable, keeping a mux off the multiplier's D-input path. Each
+product lands in `acc` one cycle after it is fed.
+
+On its own this did **not** close timing. Max `ss` slack went to -0.534 ns.
+Both failing paths, the multiplier stage (`b[0]` → `prod_q`) and the adder
+stage (`acc` → `acc`), had logic that fit easily. What didn't fit was buffering
+the flow had added:
+- **Delay cells used as ordinary buffers.** The high-fanout and max-cap repair
+  steps picked `clkdlybuf4s*` cells (built to add delay) to buffer input and
+  internal nets: 2.60 ns of the multiplier path and 5.26 ns of the adder path.
+- **No setup repair after routing.** Setup was last repaired after clock-tree
+  synthesis, on estimated wire loads, and nothing checked it again once real
+  routing existed.
+
+### Step 2: fix the flow configuration
+
+Each change was tested on its own, against the same pipelined RTL:
+
+| Change in `asic/pe_cell/config.json` | max / nom / min `ss` setup slack (ns) | Max-slew violations |
+|---|---|---|
+| Pipelined RTL, default config | -0.534 / -0.401 / -0.312 | 16 |
+| `RUN_POST_GRT_RESIZER_TIMING: true` | -0.121 / +0.014 / +0.111 | 5 |
+| `GRT_RESIZER_SETUP_SLACK_MARGIN: 0.3` | -0.067 / +0.141 / +0.288 | 5 |
+| `SYNTH_STRATEGY: "DELAY 1"` *(reverted)* | -0.416 / -0.186 / +0.022 | 18 |
+| `EXTRA_EXCLUDED_CELLS: clkdlybuf4s*` | +0.063 / +0.187 / +0.282 | 104 |
+| `RUN_POST_GRT_DESIGN_REPAIR: true` | +0.102 / +0.250 / +0.351 | 93 |
+| Also exclude `buf_1`, `clkbuf_1` (**final**) | **+0.180 / +0.285 / +0.364** | **5** |
+
+Notes on the less obvious rows:
+- **Raising the setup margin to 0.3 ns** makes the post-route repair aim past
+  the gap between its global-route estimates and the final extracted
+  parasitics. It fixed the multiplier stage, but the adder stage still looked
+  passing to the repair step, so it was never worked on.
+- **`DELAY 1` synthesis made things worse.** The faster multiplier spreads each
+  input bit across many more gates. The input nets then needed more fanout
+  buffers, which were again delay cells (6.15 ns of the worst path). Area grew
+  21%. Reverted.
+- **Banning the delay cells closed setup but caused slew violations.** The
+  repair steps fell back to size-1 buffers (`buf_1`, `clkbuf_1`), each driving
+  about 10 loads, too weak at `ss`. The post-route slew repair saw only 4 of
+  those 93 violations on its estimated parasitics. Banning size-1 buffers forced
+  size 2 or larger and fixed both.
+
+### Final result
+
+Run `RUN_2026-10-29_04-53-28`, 16 ns (62.5 MHz):
+
+| Corner | Setup worst slack | Hold worst slack |
+|---|---|---|
+| `ss` (max / nom / min) | +0.180 / +0.285 / +0.364 ns | +0.925 / +0.914 / +0.906 ns |
+| `tt` (max / nom / min) | +6.532 / +6.598 / +6.657 ns | +0.350 / +0.343 / +0.337 ns |
+| `ff` (max / nom / min) | +8.967 / +9.011 / +9.051 ns | +0.124 / +0.119 / +0.116 ns |
+
+Zero setup or hold violations. DRC, LVS and antenna clean. The worst path is
+now the multiplier stage: input `b[1]` through the partial-product tree into
+`prod_q[15]`.
+
+**Known remaining issue:** 5 max-slew violations, all on one net at the `ss`
+corners. A size-1 four-input NOR (`nor4_1`, created by synthesis) drives 4 gates
+plus a buffer with a 0.925 ns transition, against the 0.75 ns limit. No repair
+step resized it. It meets timing, and it's within the library's own
+characterized range (up to 1.5 ns), but a stricter sign-off would flag it.
+
+The 7 `clkbuf_1` cells still in the netlist (`clkload0`-`clkload6`) are dummy
+loads the clock-tree step adds to balance the tree. They ignore the exclusion
+list and drive no logic.
+
+**One caveat on the absolute numbers:** the multiplier path's first ~3.2 ns,
 roughly 20% of the 16 ns budget, is a fixed input external delay that comes
 from LibreLane's generic fallback SDC, since no `PNR_SDC_FILE` or
-`SIGNOFF_SDC_FILE` was defined for this run. A real sign-off would set this deliberately, and doing so could
-change the reported number in either direction.
+`SIGNOFF_SDC_FILE` is defined. A real sign-off would set this deliberately, and
+doing so could change the reported numbers in either direction.
 
 ---
 
@@ -149,17 +219,29 @@ change the reported number in either direction.
 |------|-------------------|
 | `runs/.../final/gds/*.gds` | GDSII, opened in KLayout (`klayout <file>.gds`), VNC mode only |
 | `runs/.../final/nl/*.v` | Gate-level netlist after technology mapping |
-| `runs/.../*/metrics.json` | All run metrics in one file, including timing (`timing__setup__wns__corner:*`), DRC/LVS/antenna counts, and power |
-| `runs/.../55-openroad-stapostpnr/<corner>/checks.rpt` | Full critical-path breakdown (startpoint, endpoint, cell-by-cell delay) for that corner |
+| `runs/.../final/metrics.json` | All run metrics in one file, including timing (`timing__setup__ws__corner:*`), DRC/LVS/antenna counts, and power |
+| `runs/.../resolved.json` | Every config variable the run actually used, including defaults |
+| `runs/.../*-openroad-stapostpnr/<corner>/max.rpt` | Worst setup paths, cell by cell (startpoint, endpoint, delay) for that corner |
+| `runs/.../*-openroad-stapostpnr/<corner>/checks.rpt` | Max-slew, max-cap and max-fanout violators for that corner |
+
+The step number in front of `openroad-stapostpnr` changes when steps are added
+(55 with the default config, 56 with the final one).
 
 ### Numbers pulled for this README and the main project README
-From `RUN_2026-09-08_00-57-59` (the 100×100 / 50% utilization / 16 ns config,
-matching the final verified settings):
 
-- **Cell count:** 1,081 standard cell instances
-- **Cell area:** 6,831.55 µm²
-- **Die area:** 10,040.4 µm² (target was 100×100 = 10,000 µm², and a small margin adds the rest)
-- **Actual utilization:** ~68% (cell area divided by die area), higher than the 50% `FP_CORE_UTIL` target, since that setting is a placement target rather than a guaranteed final result
+| | Single-cycle (`RUN_2026-09-08_00-57-59`) | Pipelined, final config (`RUN_2026-10-29_04-53-28`) |
+|---|---|---|
+| Instances (including fill and tap) | 1,081 | 1,194 |
+| Instances excluding fill | 657 | 706 |
+| Flip-flops | 32 | 49 |
+| Std-cell area (excluding fill) | 4,918.47 µm² | 5,285.07 µm² (+7.5%) |
+| Core area | 6,831.55 µm² | 7,607.30 µm² |
+| Std-cell utilization of core | 72.0% | 69.5% |
+
+Utilization is above the 50% `FP_CORE_UTIL` setting, since that is a placement
+target rather than a guaranteed result. An earlier version of this README
+listed 6,831.55 µm² as cell area, but that figure is the core area, which
+filler cells fill completely.
 
 **Note on KLayout's technology display:** this container's KLayout only has
 `sg13g2` (IHP's separate 130nm PDK, also bundled in this image) and a generic
@@ -184,8 +266,8 @@ screenshot was ever taken.
 | Timing sign-off | Vivado STA (vendor SDF) | OpenSTA with RC extraction, multi-corner (PVT) |
 | Output | Bitstream | GDSII (send to fab) |
 | PE multiplier | LUT logic (the 8 DSP48E1s are all used by the RV32M multiplier) | Synthesized from standard cells |
-| Logic resources | 14,084 LUTs (full CPU, FPGA fabric-wide) | 1,081 standard cells, 6,831.55 µm² (pe_cell alone, so not  comparable since it's a full design vs. a single extracted module) |
-| Result | 79 MHz (10 ns constraint, -2.730 ns WNS after 3 critical-path fixes) | Closes at 62.5 MHz (16 ns) for typical and fast-process corners, and falls 0.370 ns short at the worst-case slow-process corner |
+| Logic resources | 14,084 LUTs (full CPU, FPGA fabric-wide) | 706 standard cells (excluding fill), 5,285.07 µm² (pe_cell alone, so not comparable since it's a full design vs. a single extracted module) |
+| Result | 79 MHz (10 ns constraint, -2.730 ns WNS after 3 critical-path fixes) | Closes at 62.5 MHz (16 ns) at all nine PVT corners, +0.180 ns worst slack at slow-process/100°C, after pipelining the MAC and tuning the flow's buffering |
 
 **Why the two numbers aren't a like-for-like comparison:** 79 MHz is the
 Fmax of the whole CPU, and it is set by the CPU's branch-resolution path
