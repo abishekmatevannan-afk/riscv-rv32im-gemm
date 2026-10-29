@@ -195,7 +195,7 @@ Instruction counts measured with corrected PMU (`instr_retired` gated by `!mem_w
 
 - **Fits 1 KB memories:** Q8.24 fixed point, leapfrog integration, CORDIC for sin/cos, and a radial-symmetry table (89 rays traced instead of 4,096).
 - **Bit-exact:** all 4,096 bytes from the UART must match `blackhole_ref.py`, a Python copy of the same integer algorithm. The shadow edge must also land on GR's critical impact parameter, b = 3√3 M.
-- **Found a real bug:** DIV in the pipeline returned the previous quotient because the divider didn't stall on its issue cycle. The divider's own unit test couldn't see it. Fixed in [438f6cb](https://github.com/abishekmatevannan-afk/riscv-rv32im-gemm/commit/438f6cb), with `tb_div_pipeline` as the regression test.
+- **Found a real bug:** DIV in the pipeline returned the previous quotient because the divider didn't stall on its issue cycle. The divider's own unit test couldn't see it. Fixed in [69fa49f](https://github.com/abishekmatevannan-afk/riscv-rv32im-gemm/commit/69fa49f), with `tb_div_pipeline` as the regression test.
 
 | Cycles | Instructions | CPI | Branch mispredicts | D$ misses | I$ misses |
 |--------|--------------|-----|--------------------|-----------|-----------|
