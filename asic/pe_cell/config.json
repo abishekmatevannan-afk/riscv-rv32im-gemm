@@ -10,6 +10,8 @@
     "DIE_AREA": [0, 0, 100, 100],
     "FP_CORE_UTIL": 50,
 
+    "RUN_POST_GRT_RESIZER_TIMING": true,
+
     "PDK": "sky130A",
     "STD_CELL_LIBRARY": "sky130_fd_sc_hd"
 }
