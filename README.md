@@ -1,6 +1,33 @@
 # RISC-V RV32IM Core with GEMM Accelerators
 
-A complete RV32IM RISC-V processor implemented in SystemVerilog with **up to 13.48× speedup on unsigned 8-bit (UINT8) matrix multiply** (parallel MAC accelerator), synthesized at **79 MHz** on Xilinx Artix-7 (xc7a200tsbg484-2, Vivado 2025.2). Features a 5-stage pipeline with full hazard handling, split 4KB L1 cache hierarchy backed by a 5-manager/5-subordinate AXI4-Lite fabric, 2-bit branch predictor, M-mode exception handling, memory-mapped UART, hardware performance counters, and two custom accelerators (parallel MAC array and output-stationary systolic array) with custom SIMD extensions. 4×4 UINT8 GEMM: **3.63× (SIMD)**, **13.48× (parallel MAC)**, **12.24× (systolic)** vs scalar RV32M · 14,084 LUTs · 1 BRAM.
+> *"What I cannot create, I do not understand."*
+> — Richard Feynman
+
+A RISC-V CPU I designed from scratch in SystemVerilog, with custom hardware for matrix multiply, running at **79 MHz** on a Xilinx Artix-7 FPGA. It passes all 48 official riscv-tests, and it rendered the black hole below.
+
+<p align="center">
+  <img src="blackhole/out/blackhole_cpu.png" alt="Black hole rendered by the CPU" width="320"><br>
+  <em>Rendered by this CPU in simulation: 228 RISC-V instructions tracing light around a black hole. <a href="blackhole/">How it works</a></em>
+</p>
+
+**At a glance**
+- **Core:** 5-stage pipeline with forwarding, a 2-bit branch predictor, precise M-mode traps, and hardware performance counters
+- **Memory:** split 4 KB L1 caches on a 5-manager/5-subordinate AXI4-Lite fabric, plus a memory-mapped UART
+- **Acceleration:** 4×4 UINT8 matrix multiply vs. scalar RV32M: **3.63×** (SIMD), **13.48×** (parallel MAC), **12.24×** (systolic array)
+- **FPGA:** 79 MHz on xc7a200tsbg484-2 (Vivado 2025.2), 14,084 LUTs, 1 BRAM
+- **Verification:** 37 self-checking testbenches with SVA, and all 48 riscv-tests (rv32ui + rv32um) passing
+- **ASIC:** one accelerator PE taken from RTL to GDSII on Sky130, closing timing at all 9 PVT corners ([asic/](asic/))
+
+## Why I built this
+
+This idea first planted itself in my head in high school, when my computer engineering teacher challenged everyone to make the most powerful PC imaginable under a budget. After hours of slaving away on PCPartPicker, rather than finalizing a build, I only ended up with more questions in my mind. How were certain CPUs faster than others? Why was every good CPU I saw always from AMD, Qualcomm, or Intel? And how in the world is a CPU so small if it is supposed to do copious amounts of math?
+
+These thoughts began to sprout in my high school computer engineering class, where logic gates and the basics of combinational and sequential circuits were taught. To see all this computing power come from minuscule transistors shocked me. To think that basic 0s and 1s were enough to create machines that could change lives. Learning about RISC-V in university made me realize that now was the best time to truly learn how CPUs are built, which began months of learning, errors, and debugging.
+
+The RTL process was an experience I will never forget. Whether it was learning about new modules to implement after finishing one, or spending hours debugging only to realize I forgot to include a reg or wire in a condition, it showed me the fun and excitement of engineering that I had only heard experienced engineers talk about. For the first time, I was excited to find errors in my work, learn from them, and continue the process over and over again.
+
+This project is far from done. There is still so much to fix and learn, like improving the Fmax, and ultimately turning the core into a superscalar pipelined design.
+
 
 
 ---
@@ -189,8 +216,6 @@ Instruction counts measured with corrected PMU (`instr_retired` gated by `!mem_w
 
 ## Black Hole Ray Tracer Workload
 
-<img src="blackhole/out/blackhole_cpu.png" alt="Black hole rendered by the CPU" width="256" align="right">
-
 [`blackhole/`](blackhole/) is a general-relativity ray tracer written in 228 RISC-V instructions. It renders a 64×64 Schwarzschild black hole on `top_pipeline` in simulation and sends the image out over the UART. It stresses the multiplier, divider, branch predictor, caches and UART together for 5.47M cycles, which the matmul benchmarks don't.
 
 - **Fits 1 KB memories:** Q8.24 fixed point, leapfrog integration, CORDIC for sin/cos, and a radial-symmetry table (89 rays traced instead of 4,096).
@@ -238,6 +263,8 @@ Critical path: branch resolution in EX, from EX/MEM forwarding → ALU compare �
 Two designs taken through an open-source ASIC flow to compare with the FPGA implementation in Vivado. Full writeup, setup instructions, and every ruled-out hypothesis in [`asic/README.md`](asic/README.md).
 
 ![pe_cell placed-and-routed layout, Sky130](asic/pe_cell/layout.png)
+
+*Layout from the earlier single-cycle run, before the MAC was pipelined.*
 
 | Metric | FPGA (Vivado, Artix-7) | ASIC (LibreLane, Sky130 130nm) |
 |--------|------------------------|----------------------------------|

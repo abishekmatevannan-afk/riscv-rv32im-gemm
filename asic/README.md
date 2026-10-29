@@ -1,25 +1,34 @@
 # ASIC Flow: LibreLane + Sky130 130nm
 
-Two designs taken through an open-source ASIC flow to compare with the FPGA implementation in Vivado. 
+> *"Nature cannot be fooled."*
+> — Richard Feynman
 
-**Note on tooling:** OpenLane 2 was renamed to LibreLane in early 2026, and it's
-the same codebase and backward-compatible. Commands below use `librelane`, not
-`openlane`.
+Two designs taken through an open-source ASIC flow to compare with the FPGA implementation in Vivado. The main one is a multiply-accumulate processing element (PE) from the CPU's matrix accelerator.
+
+**Result:** the PE closes timing at 62.5 MHz at all 9 process, voltage and
+temperature corners, with clean DRC, LVS and antenna checks. It first missed
+the slow corner by 0.370 ns. Pipelining the multiply and the accumulate into
+separate stages, then adjusting the flow's buffering settings, turned that into
++0.180 ns of slack. [The full story is below](#what-the-timing-result-actually-shows).
+
+## Why I built this
+
+RTL gets you into the race, but physical design is what gets you to the finish line. Turning the RTL into real transistors and wires, and checking them against the physics of the chip is what gets you running. When I first planned on using ASIC tools, I found that most of them are expensive and usually only available through companies or university labs. That, combined with me exploring open source tools and stacks, persuaded me to find an open source ASIC flow that I could use as the closest way to learn about what makes a chip work in the real world. This project was designed to help me warm up to the basics of ASIC design and how a chip gets built and checked on the EDA side.
 
 ---
 
 ## Designs
 
 ### `alu/`: zero-risk first pass
-The RV32I ALU (`src/alu.sv`). Is purely combinational 32-bit ADD/SUB/AND/OR/XOR/shifts/SLT, Which has no sequential state (`CLOCK_PORT: null`), so it was used only to validate
+The RV32I ALU (`src/alu.sv`) is purely combinational 32-bit ADD/SUB/AND/OR/XOR/shifts/SLT with no sequential state (`CLOCK_PORT: null`), so it was used only to validate
 the toolchain.
 
 **Result:** Antenna, LVS, and DRC all passed clean. However, one item got flagged (`1 XOR
-difference`), which was confirmed to be harmless and didnt affect anything. Both the ALU run and the pe_cell run below
+difference`), which was confirmed to be harmless and didn't affect anything. Both the ALU run and the pe_cell run below
 produce the same single-shape mismatch on GDS layer `235/4` (`prBoundary.boundary`),
 a non-fabrication placement/routing marker layer where Magic and KLayout's GDS
 stream out tools disagreed on rendering, so it isn't a real issue. Setup timing
-violations on this run are also a config artifact rather than a legitamite result to consider,
+violations on this run are also a config artifact rather than a legitimate result to consider,
 due to a purely combinational design still getting a virtual clock from
 `CLOCK_PERIOD`, and the ALU's actual delay exceeding the placeholder period. That
 wasn't worth fixing and improving since the ALU run's only purpose was proving the toolchain actually worked.
@@ -54,6 +63,10 @@ The layout image above is from the earlier single-cycle run.
 ---
 
 ## Setup
+
+**Note on tooling:** OpenLane 2 was renamed to LibreLane in early 2026, and it's
+the same codebase and backward-compatible. Commands below use `librelane`, not
+`openlane`.
 
 ### Prerequisites
 - Docker Desktop (macOS or Linux)
@@ -130,7 +143,7 @@ Two experiments from that phase, and what they actually show:
   -0.370 ns (16 ns), then got *worse* at 17 ns (-0.567 ns). A fixed gate delay
   would have improved by about 1 ns with the looser clock. Slack getting worse
   means the flow built a different, slower netlist under the looser target.
-  The post-pipelining runs below found the cause: the repair steps' buffering
+  The post-pipelining runs below point to a likely cause: the repair steps' buffering
   choices, which vary from run to run.
 
 ### Step 1: pipeline the RTL

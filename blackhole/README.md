@@ -1,8 +1,17 @@
 # Black Hole Renderer on the RV32IM Core
 
+> *"If you gaze long into an abyss, the abyss also gazes into you."*
+> — Friedrich Nietzsche
+
 A general-relativity ray tracer written in RISC-V assembly and run on this repo's 5-stage pipelined CPU (in simulation, through the real UART). It renders a 64×64 image of a non-spinning (Schwarzschild) black hole in front of a checkerboard sky.
 
 ![black hole rendered by the CPU](out/blackhole_cpu.png)
+
+## Why I built this
+
+Black holes have been an interesting topic to me since I was a child, and the more TED-Ed, Kurzgesagt, and other relevant YouTube videos I watched, the more it fascinated me that such a celestial object could exist. The mysteries and physics that black holes contain have been an exciting topic to not just me but countless people. When I first made the core, I thought about making sure it would work in the real world. The ASIC project showed me the physical side of one piece of it, so all that was left was to prove that the core could handle software and computation. What better way to satisfy my excitement for a certain celestial object, and to find out whether the core could handle computation, than with a black hole ray tracer? While the limits of the core kept me from a high-resolution, fully accurate render, I learned a very valuable skill of working under constraints.
+
+Every time an identified constraint prevented me from fully realizing my dream of a realistic black hole, it only furthered my resolve to get a black hole running. Whether it was the lack of memory, the lack of a floating point ISA, or the lack of trig on the core, it only made my brain think, "How could I get this to work under this limitation?" That led to ideas such as radial symmetry to limit the number of rays I needed to handle, and a deep rabbit hole into CORDIC that allowed me to compute sin and cos with integer math. I hope that as I learn more, individually and on a professional team, I can improve this project and one day run the accurate black hole of my dreams on my own CPU.
 
 ## What it computes
 
