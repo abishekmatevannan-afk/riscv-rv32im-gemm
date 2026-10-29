@@ -11,6 +11,10 @@
 //   Signed (wrong):     -1 *2 = -2 (0xFFFFFFFE)
 // Passing 510 proves the zero-extension in pe_cell.sv matches
 // the {24'd0, a_byte} zero-extension in parallel_mac_sub.sv line 198.
+//
+// pe_cell is two-stage (product register, then accumulate), so a product
+// fed on cycle N lands in acc on cycle N+1. drain() supplies that cycle
+// before each check.
 
 module tb_pe_cell;
 
@@ -41,6 +45,12 @@ module tb_pe_cell;
         @(posedge clk); #1;
     endtask
 
+    // One idle cycle so the last product in prod_q reaches acc.
+    task automatic drain();
+        en = 0;
+        @(posedge clk); #1;
+    endtask
+
     initial begin
         $dumpfile("sim/pe_cell.vcd");
         $dumpvars(0, tb_pe_cell);
@@ -55,19 +65,23 @@ module tb_pe_cell;
         // --- Test 1: reset zeroes acc ---
         check("reset clears acc", 32'd0);
 
-        // --- Test 2: en=0 holds value ---
-        tick(8'd3, 8'd5);              // acc = 15
-        a = 8'd99; b = 8'd99; en = 0;
+        // --- Test 2: one-cycle latency, then en=0 holds value ---
+        tick(8'd3, 8'd5);              // 15 in prod_q, acc still 0
+        check("product not visible same cycle", 32'd0);
+        drain();                       // acc = 15
+        a = 8'd99; b = 8'd99; en = 0;  // prod_q loads 9801, en_q=0 blocks it
+        @(posedge clk); #1;
         @(posedge clk); #1;
         check("en=0 holds", 32'd15);
 
         // --- Test 3: PDOT([1,2,3,4],[5,6,7,8]) == 70 ---
         // Matches c_acc[0][0] from tb_parallel_mac baseline test
         rst = 1; @(posedge clk); #1; rst = 0;
-        tick(8'd1, 8'd5);              // acc = 5
-        tick(8'd2, 8'd6);              // acc = 17
-        tick(8'd3, 8'd7);              // acc = 38
-        tick(8'd4, 8'd8);              // acc = 70
+        tick(8'd1, 8'd5);              // acc = 0
+        tick(8'd2, 8'd6);              // acc = 5
+        tick(8'd3, 8'd7);              // acc = 17
+        tick(8'd4, 8'd8);              // acc = 38
+        drain();                       // acc = 70
         check("PDOT([1,2,3,4],[5,6,7,8]) == 70", 32'd70);
 
         // --- Test 4: second pass accumulates (mirrors K-tile chaining) ---
@@ -75,12 +89,18 @@ module tb_pe_cell;
         tick(8'd2, 8'd6);
         tick(8'd3, 8'd7);
         tick(8'd4, 8'd8);
+        drain();
         check("two PDOT passes == 140", 32'd140);
 
-        // --- Test 5: mid-run reset clears ---
-        tick(8'd10, 8'd10);            // acc = 240
-        rst = 1; @(posedge clk); #1; rst = 0;
+        // --- Test 5: mid-run reset clears; en during reset is ignored ---
+        // en stays high through the reset edge, so prod_q captures 100 on
+        // that edge. en_q must reset to 0 or the 100 lands in acc after rst.
+        tick(8'd10, 8'd10);
+        rst = 1;
+        @(posedge clk); #1; rst = 0; en = 0;
         check("reset mid-run clears", 32'd0);
+        drain();
+        check("en during reset not accumulated", 32'd0);
 
         // --- Test 6: max UINT8 × 4 stays within 32-bit acc ---
         // 255*255 = 65025; ×4 = 260100 — fits comfortably in 32 bits
@@ -88,6 +108,7 @@ module tb_pe_cell;
         tick(8'd255, 8'd255);
         tick(8'd255, 8'd255);
         tick(8'd255, 8'd255);
+        drain();
         check("4x(255*255) = 260100, no overflow", 32'd260100);
 
         // --- Test 7: signed/unsigned discriminator ---
@@ -95,7 +116,19 @@ module tb_pe_cell;
         // Checks that extraction preserved {24'd0,...} zero-extension, not sign-extension.
         rst = 1; @(posedge clk); #1; rst = 0;
         tick(8'hFF, 8'h02);
+        drain();
         check("unsigned: 0xFF*2 = 510 not -2", 32'd510);
+
+        // --- Test 8: en bubbles stay aligned with their products ---
+        // Bubble operand (9*9=81) must not be accumulated.
+        rst = 1; @(posedge clk); #1; rst = 0;
+        tick(8'd1, 8'd1);
+        tick(8'd9, 8'd9, 1'b0);
+        tick(8'd2, 8'd2);
+        tick(8'd9, 8'd9, 1'b0);
+        tick(8'd3, 8'd3);
+        drain();
+        check("1+4+9 with en bubbles == 14", 32'd14);
 
         $display("\n========== RESULTS: %0d passed, %0d failed ==========",
                  pass_cnt, fail_cnt);

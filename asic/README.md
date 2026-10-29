@@ -34,7 +34,7 @@ register on every enabled cycle. This is the building block tiled 16 times in th
 hardware accelerator.
 
 The RTL was verified  before touching LibreLane via `make sim MODULE=pe_cell`, which
-ran 7 of 7 passing tests, including a PDOT cross-validation against the full
+ran 7 of 7 passing tests (10 of 10 after the pipelining fix below), including a PDOT cross-validation against the full
 pipeline testbench (expected 70, confirmed 70) and a signed/unsigned
 discriminator. Feeding `a=0xFF, b=0x02` and getting 510 confirms the module
 uses zero-extension and unsigned multiply, matching the original
@@ -123,10 +123,17 @@ cycle, the expected bottleneck for a single-cycle MAC design.
   That behavior, combined with the congestion test above,
   shows the remaining gap is caused by a fixed gate delay through the multiply/add chain rather than anything a looser clock or more floorplan room can solve.
 
-**A solution (not yet implemented):** pipeline the multiply and the
-accumulate into two separate cycles by registering the multiplier's output
-before it feeds the adder, which breaks the single-cycle critical path at that
-boundary. 
+**Fix (implemented in RTL, LibreLane re-run pending):** `src/pe_cell.sv` now
+pipelines the multiply and the accumulate into two separate cycles by
+registering the 16-bit product (`prod_q`) before it feeds the 32-bit adder,
+which breaks the single-cycle critical path at that boundary. A valid bit
+(`en_q`, reset to 0) travels with the product, so `prod_q` needs no reset or
+load enable, keeping a mux off the multiplier's D-input path. Each product now
+lands in `acc` one cycle after it is fed. `tb/tb_pe_cell.sv` was updated for
+the extra cycle and passes 10 of 10, including a test that `en` held high
+during reset is not accumulated. `parallel_mac_sub.sv` is unchanged, so the
+accelerator's 4-cycle compute and benchmark numbers still hold. The numbers
+above are from the single-cycle version.
 
 **One caveat on the absolute number:** the critical path's first ~3.2 ns,
 roughly 20% of the 16 ns budget, is a fixed input external delay that comes
