@@ -34,31 +34,9 @@ This project is far from done. There is still so much to fix and learn, like imp
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph CPU["RV32IM core"]
-        direction LR
-        IF["IF"] --> ID["ID"] --> EX["EX"] --> MEM["MEM"] --> WB["WB"]
-        IC["I-cache<br>4 KB"]
-        DC["D-cache<br>4 KB, write-back"]
-        PMU["Perf counters<br>0xFFFF2000"]
-        IF --> IC
-        MEM --> DC
-        MEM --> PMU
-    end
+![System block diagram](docs/diagrams/system.svg)
 
-    XBAR["AXI4-Lite interconnect<br>5 managers, 5 subordinates"]
-    ISRAM["Instruction SRAM"]
-    DSRAM["Data SRAM"]
-    UART["UART<br>0xFFFF0000"]
-    MAC["Parallel MAC<br>0xFFFE0000"]
-    SYS["Systolic array<br>0xFFFD0000"]
-
-    IC --> XBAR
-    DC --> XBAR
-    MEM -- "uncached IO and accelerators" --> XBAR
-    XBAR --> ISRAM & DSRAM & UART & MAC & SYS
-```
+**[Full pipeline datapath (SVG)](docs/diagrams/datapath.svg)**: all four pipeline registers, the forwarding and WB→ID bypass paths, the branch and jump redirect, and the hazard, forwarding and branch-predictor control. Both diagrams are drawn from `src/top_pipeline.sv`, and the source is [`docs/diagrams/cpu.drawio`](docs/diagrams/cpu.drawio).
 
 ---
 
