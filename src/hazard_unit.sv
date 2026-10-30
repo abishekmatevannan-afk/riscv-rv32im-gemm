@@ -21,7 +21,7 @@ module hazard_unit (
 
     input  logic       cache_stall,     // stall from dcache miss
     input  logic       div_busy,        // stall from multi-cycle divider
-    input  logic       simd_stall,      // 1-cycle stall when SIMD first enters EX
+    input  logic       simd_stall,      // 2-cycle stall while registered SIMD inputs/result settle
     input  logic       icache_stall,
 
     // pipeline control outputs

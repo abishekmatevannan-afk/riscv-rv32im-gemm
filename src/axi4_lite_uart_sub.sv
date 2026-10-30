@@ -1,12 +1,9 @@
 // Wraps uart_mem_map with standard AXI4-Lite interface
 // Always-ready, combinational responses
 //
-// NOT YET CONNECTED to the main interconnect.
-// To connect: extend interconnect to 3 subordinates, route
-// dcache manager to this sub for addresses >= 0xFFFF0000,
-// and remove the !is_io mask on dcache's cpu_we/cpu_re in
-// top_pipeline.sv. Requires adding a one-cycle stall for IO
-// reads since dcache mem_re is registered (one-cycle delay).
+// Connected as interconnect subordinate S2, driven by the IO manager (M2).
+// top_pipeline.sv routes 0xFFFF.... addresses here, except the PMU
+// range 0xFFFF20xx (is_uart = is_io && !is_perf).
 
 module axi4_lite_uart_sub #(
     parameter CLKS_PER_BIT = 10416

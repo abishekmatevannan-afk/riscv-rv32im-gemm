@@ -35,8 +35,8 @@ module top_pipeline #(
     // io_m_rd   : read data returned by the IO manager (replaces uart_rd)
     // is_uart   : gates the IO manager — same as is_io but excludes PMU
     // is_io     : true for any 0xFFFF.... address (UART and PMU)
-    // accel_rd  : read data from the systolic-array accelerator manager
-    // is_accel  : true for 0xFFFE.... addresses (systolic array register map)
+    // accel_rd  : read data from the parallel MAC accelerator manager
+    // is_accel  : true for 0xFFFE.... addresses (parallel MAC register map)
     logic [31:0] io_m_rd;
     logic        is_uart;
     logic        is_io;
@@ -441,7 +441,8 @@ module top_pipeline #(
         .bvalid    (io_m_bvalid),  .bready (io_m_bready)
     );
 
-    // interconnect: icache→ISRAM, dcache→DSRAM, IO manager→UART, accel→systolic
+    // interconnect: icache→ISRAM, dcache→DSRAM, IO manager→UART,
+    //               accel→parallel MAC, systolic manager→systolic array
     axi4_lite_interconnect XBAR (
         // M0: icache → S0: ISRAM
         .m0_arvalid(ic_m_arvalid), .m0_arready(ic_m_arready),

@@ -96,9 +96,9 @@ Point-to-point interconnect: each of the five managers (icache, dcache, IO, para
 
 | Subordinate | Address | Description |
 |-------------|---------|-------------|
-| ISRAM | N/A | Instruction SRAM (read-only, `$readmemh` init) |
-| DSRAM | N/A | Data SRAM (read/write, zero-init) |
-| UART | `0xFFFF0000` | UART TX/RX subordinate |
+| ISRAM | all instruction fetches | 1 KB instruction SRAM (read-only, `$readmemh` init), aliases every 1 KB |
+| DSRAM | data addresses below `0xFFFD0000` | 1 KB data SRAM (read/write, zero-init), aliases every 1 KB |
+| UART | `0xFFFF0000` | UART TX/RX subordinate (all of `0xFFFFxxxx` except the PMU at `0xFFFF20xx`) |
 | Parallel MAC | `0xFFFE0000` | 4×4 PE grid accelerator |
 | Systolic Array | `0xFFFD0000` | Output-stationary wavefront accelerator |
 
@@ -289,8 +289,8 @@ End-to-end systolic array transaction over AXI: operand matrices are loaded via 
 
 | Address | Description |
 |---------|-------------|
-| `0x00000000` | Instruction SRAM (via I$) |
-| `0x00000000` | Data SRAM (via D$, separate Harvard path) |
+| `0x00000000` | Instruction SRAM (via I$, 1 KB; every fetch goes here, aliasing every 1 KB) |
+| `0x00000000`–`0xFFFCFFFF` | Data SRAM (via D$, 1 KB, separate Harvard path; aliases every 1 KB) |
 | `0xFFFF0000` | UART TX/RX (AXI4-Lite subordinate) |
 | `0xFFFF2000` | PMU counters (8 × 4B) |
 | `0xFFFD0000` | Systolic Array registers |

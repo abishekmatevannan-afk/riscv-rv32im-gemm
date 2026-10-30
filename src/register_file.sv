@@ -1,5 +1,5 @@
 // 32 x 32-bit registers
-// 2 asynchronous read ports, 1 synchronous write port
+// 3 asynchronous read ports (rs3 = PMACC accumulator), 1 synchronous write port
 // x0 hardwired to zero
 
 module register_file (
