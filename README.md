@@ -36,7 +36,11 @@ This project is far from done. There is still so much to fix and learn, like imp
 
 ![System block diagram](docs/diagrams/system.svg)
 
-**[Full pipeline datapath (SVG)](docs/diagrams/datapath.svg)**: all four pipeline registers, the forwarding and WB→ID bypass paths, the branch and jump redirect, and the hazard, forwarding and branch-predictor control. Both diagrams are drawn from `src/top_pipeline.sv`, and the source is [`docs/diagrams/cpu.drawio`](docs/diagrams/cpu.drawio).
+### Pipeline datapath
+
+[![Pipeline datapath](docs/diagrams/datapath.svg)](docs/diagrams/datapath.svg)
+
+Click the image to open it full size. It shows all four pipeline registers, the forwarding and WB→ID bypass paths, the branch and jump redirect, and the hazard, forwarding and branch-predictor control. Both diagrams are drawn from `src/top_pipeline.sv`, and the source is [`docs/diagrams/cpu.drawio`](docs/diagrams/cpu.drawio).
 
 ---
 
