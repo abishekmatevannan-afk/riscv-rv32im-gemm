@@ -30,3 +30,6 @@ third_party/
 # black hole renderer build outputs (make regenerates them); keep the README's PNGs
 blackhole/out/*
 !blackhole/out/*.png
+
+# diagram generator and RTL connection checker (local tooling)
+docs/diagrams/gen/

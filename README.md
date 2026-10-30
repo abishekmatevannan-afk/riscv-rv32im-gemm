@@ -227,39 +227,53 @@ Two designs taken through an open-source ASIC flow to compare with the FPGA impl
 
 ## Waveforms
 
-Four captures from the simulation testbenches, each verified signal-by-signal against the VCD before captioning.
+Four captures from my simulation testbenches. For each one I re-ran the test and checked the caption against the VCD cycle by cycle, so every value and timestamp below is what the simulator actually produced.
 
 ### D$ dirty-line eviction and refill (`make wave MODULE=dcache`)
 
 ![dcache dirty eviction waveform](docs/waveforms/dcache_miss.png)
 
-Signals: `cpu_addr`, `cpu_we`, `cpu_wd`, `cache_miss`, `cache_stall`, `state[2:0]`, `mem_we`, `mem_addr`, `mem_wd`, `mem_re`, `mem_rd`. Navigate to `tb_dcache → dut` for `state`.
+Signals: `state[2:0]`, `cache_hit`, `cache_miss`, `cache_stall`, `ex_addr_i`, `cpu_we`, `cpu_wd`, `write_merge`, `port_a_wd`, `mem_addr`, `mem_re`, `mem_we`, `mem_wd`, `mem_rd`, `wb_addr`, `fill_word[1:0]`, `word_off[1:0]`, `fill_wd_q`, all in `tb_dcache → dut`. Zoom to 435–565 ns.
 
-Dirty-line eviction and refill: on a cache miss to a dirty line, the FSM transitions WB_PREP → WRITEBACK → FILL → DONE, writing back all four words of the evicted line before fetching the new line. Here the dirty line (base address 0x0000) is written back word-by-word with the modified value 0xCAFEBABE correctly appearing at offset 0x0 (word 0, where `write_word(0x0, CAFEBABE)` placed it), then FILL fetches the replacement line from 0x1000–0x100C.
+This is test 5 in `tb_dcache`. It first writes 0xCAFEBABE to word 0 of the line at 0x0000, which marks that line dirty. Then it reads 0x1000. Both addresses land on cache index 0 with different tags, so the read misses (`cache_miss` pulses at 436 ns) and the cache has to get rid of the dirty line before it can bring the new one in.
+
+The FSM goes WB_PREP → WRITEBACK → FILL → DONE. During WRITEBACK the old line goes back to memory one word at a time: 0xCAFEBABE at 0x0, then 0x01010101, 0x02020202 and 0x03030303 at 0x4, 0x8 and 0xC. Those last three are the values the line was originally filled with, so only word 0 changed. The final word is still being written during the first FILL cycle, and the reads for the new line (0x1000 to 0x100C) start the cycle after that. `cache_stall` stays high from the miss until the FSM reaches DONE at 545 ns, which is how long the pipeline would sit frozen.
 
 ### Branch mispredict redirect and pipeline flush (`make wave MODULE=top_pipeline`)
 
 ![branch mispredict waveform](docs/waveforms/bp_mispredict.png)
 
-Signals: `if_pc`, `ex_branch`, `ex_predict_taken`, `ex_branch_taken`, `mispredict`, `if_id_flush`, `id_ex_flush`, `pc_next`. All in `tb_top_pipeline → cpu1`. Zoom to the first mispredict event (~285 ns).
+Signals: `if_pc`, `ex_branch`, `ex_predict_taken`, `ex_branch_taken`, `mispredict`, `if_id_flush`, `id_ex_flush`, `pc_next`, all in `tb_top_pipeline → cpu1`. Zoom to 260–335 ns.
 
-Branch mispredict resolution: the front end fetches sequentially (0x20→0x24→0x28) with no prediction of the branch at 0x28 being taken. When the branch resolves in EX, `mispredict` asserts, redirecting `pc_next` to the true target 0x18 that same cycle, while `if_id_flush` and `id_ex_flush` assert together to clear the IF/ID and ID/EX latches, inserting two bubbles in the same cycle. `if_pc` picks up the corrected address the next cycle. This is the canonical cold-BTB case, since no prior BTB entry exists for this branch, so the pipeline defaults to sequential fetch until EX-stage resolution forces the redirect and flush.
+The loop in `test1.hex` is three instructions: an `add` at 0x18, an `addi` at 0x1C that counts x6 down, and `bne x6, x0, -8` at 0x20 that jumps back to 0x18. This is the first time the branch runs, so the BTB has no entry for it and IF just keeps fetching in order.
+
+The branch resolves in EX at 285 ns. By then IF has already moved two instructions past it (`if_pc` is 0x28). The branch is taken but was predicted not taken, so `mispredict` goes high, `pc_next` switches to 0x18 in the same cycle, and `if_id_flush` and `id_ex_flush` fire together. That turns the two wrong-path instructions at 0x24 and 0x28 into bubbles, so the mispredict costs two cycles. `if_pc` is 0x18 on the next cycle.
+
+You can also see the predictor learn. On the second pass through the loop (315 ns), `if_pc` is 0x20 and `pc_next` already points to 0x18, so the branch is predicted taken and nothing gets flushed.
 
 ### PMACC accumulator forwarding chain (`make wave MODULE=pmacc_pipeline`)
 
 ![PMACC forwarding waveform](docs/waveforms/pmacc_forward.png)
 
-Signals: `ex_is_pmacc`, `simd_stall`, `simd_busy[1:0]`, `simd_acc_q`, `forward_acc[1:0]`, `ex_fwd_acc`, `ex_result`. All in `tb_pmacc_pipeline → cpu`. Zoom to 415–540 ns.
+Signals: `ex_is_pmacc`, `simd_stall`, `simd_busy[1:0]`, `simd_a_q`, `simd_acc_q`, `forward_acc[1:0]`, `ex_fwd_acc`, `ex_result`, all in `tb_pmacc_pipeline → cpu`. Zoom to 415–540 ns.
 
-PMACC accumulator forwarding: three back-to-back PMACC instructions execute through the SIMD MAC unit (`simd_busy` cycling 0→1→2 each time). Each instruction's result is forwarded from MEM back into EX via `ex_fwd_acc` before the destination register is written, allowing the next PMACC to accumulate without stalling for a full writeback. The running sum is verified in the trace: **0x46 → 0x8c → 0xd2**, each step correctly using the forwarded total as `acc_in` for the next PMACC.
+This is test 2 of `pmacc_test.hex`: three PMACC instructions back to back (0x30, 0x34, 0x38) that all accumulate into the same register. Each one needs the previous one's result as its accumulator, but that result is still sitting in EX/MEM and hasn't been written to the register file yet. `forward_acc` stays at 2 (forward from EX/MEM) for all three, so `ex_fwd_acc` picks up the newest total every time. The first PMACC gets its starting value of 0 the same way, from the `addi` right before it.
+
+The running sum goes **0x46 → 0x8c → 0xd2** (70 → 140 → 210), and `simd_acc_q` shows each PMACC starting from the previous total. Each PMACC still takes the SIMD unit's own two stall cycles (`simd_busy` 0→1→2), but forwarding means none of them waits extra for the previous result to reach writeback.
+
+One thing that looks odd: `ex_result` already shows 0x46 the moment the first PMACC enters EX. That's an old `simd_result_q` left over from test 1, which also computed 70. The first PMACC's real result is the same number, so the value doesn't visibly change.
 
 ### Systolic array end-to-end AXI transaction (`make wave MODULE=systolic_array`)
 
 ![systolic array waveform](docs/waveforms/systolic_axi.png)
 
-Signals: `awvalid`, `awready`, `wvalid`, `wready`, `awaddr`, `wdata`, `running`, `done`, `cycle_counter[3:0]`, `arvalid`, `rvalid`, `rdata`. All in `tb_systolic_array` top scope.
+Signals: `awvalid`, `awready`, `wvalid`, `wready`, `awaddr`, `wdata`, `arvalid`, `rvalid`, `rdata` in the `tb_systolic_array` top scope, plus `running`, `done` and `cycle_counter[3:0]` in `tb_systolic_array → dut`. Zoom to 0–420 ns.
 
-End-to-end systolic array transaction over AXI: operand matrices are loaded via an 8-beat AXI write burst, after which `running` asserts and the array computes for 11 cycles (`cycle_counter` 0→0xa, asserting `done` when it reaches 0xb). Results are then drained back to the host over an AXI read burst. This capture shows the array's external timing contract. The internal diagonal wavefront fill (PE-to-PE staggered accumulation) is not visible at this signal granularity, so capturing that would require testbench instrumentation of the PE generate block (`feed_gen`/`bfeed_gen` scopes), which is left as future work.
+The testbench drives the AXI4-Lite port directly. AXI4-Lite has no bursts, so every transfer is its own single handshake. It does 9 writes: A_ROW0–3 (0x10 to 0x1C), B_ROW0–3 (0x20 to 0x2C), and finally CTRL = 1 at 0x00 to start the array.
+
+`running` goes high and the array computes for 11 cycles: `cycle_counter` counts up to 0xA, and `done` asserts when it reaches 0xB. While it runs, the testbench polls STATUS (0x04) and keeps reading 0. Once `done` is set, it reads CYCLES (0x08), which returns 11, and then the result rows starting at C_ROW0 (0x40). B in this test is the identity matrix, so the C rows come back equal to A (0x04030201, 0x08070605, and so on).
+
+This capture only shows the array from the outside. Seeing the diagonal wavefront move through the PEs would need extra probes on the PE generate blocks (`feed_gen` and `bfeed_gen`), which I haven't added yet.
 
 ---
 
