@@ -11,7 +11,7 @@ A RISC-V CPU I designed from scratch in SystemVerilog, with custom hardware for 
 </p>
 
 **At a glance**
-- **Core:** 5-stage pipeline with forwarding, a 2-bit branch predictor, precise M-mode traps, and hardware performance counters
+- **Core:** 5-stage pipeline with forwarding, a 2-bit branch predictor, M-mode traps, and hardware performance counters
 - **Memory:** split 4 KB L1 caches on a 5-manager/5-subordinate AXI4-Lite fabric, plus a memory-mapped UART
 - **Acceleration:** 4×4 UINT8 matrix multiply vs. scalar RV32M: **3.63×** (SIMD), **13.48×** (parallel MAC), **12.24×** (systolic array)
 - **FPGA:** 79 MHz on xc7a200tsbg484-2 (Vivado 2025.2), 14,084 LUTs, 1 BRAM
