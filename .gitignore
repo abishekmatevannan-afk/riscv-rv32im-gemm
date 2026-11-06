@@ -17,6 +17,7 @@ fix_summary.txt
 WAVEFORM_DEBUG_NOTES.md
 Known_limitations.md
 rv32i_learning_guide.md
+docs/uvm/alu_verif_plan.md
 *.json # Yosys netlists
 *.blif # 
 *.asc # iCE40 bitstream

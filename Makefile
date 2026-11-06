@@ -139,6 +139,40 @@ riscv-tests-build:
 	scripts/build_riscv_tests.sh
 
 
+# make uvm-alu TEST=<name> SEED=<n>
+# Compile and run the UVM testbench for src/alu.sv (tb/uvm/alu/) under
+# Verilator. Needs Verilator 5.x, the z3 solver, and UVM 2020.3.1 at UVM_HOME.
+# The first compile takes ~40 s; later runs reuse the binary until a source
+# changes. Exits nonzero if the UVM summary reports any UVM_ERROR or
+# UVM_FATAL (the simulator itself always exits 0).
+#   Example: make uvm-alu TEST=alu_smoke_test SEED=7
+#   Output:  sim/uvm_alu_<test>_<seed>.log  +  coverage in sim/uvm_alu_<test>_<seed>.dat
+UVM_HOME    ?= $(HOME)/tools/uvm-core-2020.3.1/src
+UVM_ALU_DIR  = tb/uvm/alu
+UVM_ALU_OBJ  = $(SIM_DIR)/uvm_alu
+UVM_ALU_SRCS = $(SRC_DIR)/alu.sv $(UVM_ALU_DIR)/alu_if.sv \
+               $(UVM_ALU_DIR)/alu_pkg.sv $(UVM_ALU_DIR)/tb_alu_uvm.sv
+TEST ?= alu_smoke_test
+SEED ?= 1
+
+$(UVM_ALU_OBJ)/Vtb_alu_uvm: $(UVM_ALU_SRCS)
+	@echo "Compiling UVM ALU testbench (Verilator, ~40 s)..."
+	@verilator --binary --timing --coverage -Wno-fatal -j 0 \
+		--top-module tb_alu_uvm --Mdir $(UVM_ALU_OBJ) \
+		+define+UVM_NO_DPI +incdir+$(UVM_HOME) $(UVM_HOME)/uvm_pkg.sv \
+		$(UVM_ALU_SRCS) > $(SIM_DIR)/uvm_alu_build.log 2>&1 || \
+		{ grep -E "%Error" $(SIM_DIR)/uvm_alu_build.log; exit 1; }
+
+uvm-alu: $(UVM_ALU_OBJ)/Vtb_alu_uvm
+	@log=$(SIM_DIR)/uvm_alu_$(TEST)_$(SEED).log; \
+	$(UVM_ALU_OBJ)/Vtb_alu_uvm +UVM_TESTNAME=$(TEST) +verilator+seed+$(SEED) \
+		+verilator+coverage+file+$(SIM_DIR)/uvm_alu_$(TEST)_$(SEED).dat > $$log 2>&1; \
+	grep -E "UVM_(INFO|ERROR|FATAL) .*\[|UVM_(ERROR|FATAL) :|Transactions (Checked|Failed)|Instance Coverage" $$log | grep -vE "RELNOTES|NO_DPI|NAMECHECK|RNTST"; \
+	if ! grep -q "UVM Report Summary" $$log; then echo "FAIL: no UVM summary (see $$log)"; exit 1; fi; \
+	if grep -qE "UVM_(ERROR|FATAL) :[[:space:]]+[1-9]" $$log; then echo "FAIL: $(TEST) seed $(SEED) (see $$log)"; exit 1; fi; \
+	echo "PASS: $(TEST) seed $(SEED)"
+
+
 # make all
 # Run every testbench with full verbose output — no pass/fail filtering,
 # everything gets printed. Useful when you want to read raw simulation output
@@ -162,6 +196,7 @@ all:
 #   Removes: sim/*.vvp  sim/*.vcd
 clean:
 	rm -f $(SIM_DIR)/*.vvp $(SIM_DIR)/*.vcd
+	rm -rf $(SIM_DIR)/uvm_alu $(SIM_DIR)/uvm_alu_*
 
 
-.PHONY: sim wave test-all riscv-tests riscv-tests-build all clean
+.PHONY: sim wave test-all riscv-tests riscv-tests-build uvm-alu all clean
