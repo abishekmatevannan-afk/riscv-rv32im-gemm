@@ -1,0 +1,100 @@
+<mxfile host="drawio">
+  <diagram id="uvm-alu-tb" name="UVM ALU testbench">
+    <mxGraphModel dx="800" dy="800" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="660" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- test -->
+        <mxCell id="test" value="&lt;u&gt;&lt;b&gt;test&lt;/b&gt;&lt;/u&gt;&amp;nbsp;&amp;nbsp;&lt;font face=&quot;Courier New&quot; style=&quot;font-size:11px&quot;&gt;alu_smoke_test / alu_rand_test&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EDEDED;gradientColor=#C9C9C9;gradientDirection=south;strokeColor=#333333;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontFamily=Times New Roman;fontSize=16;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="10" y="10" width="620" height="680" as="geometry"/>
+        </mxCell>
+
+        <!-- env -->
+        <mxCell id="env" value="&lt;u&gt;&lt;b&gt;env&lt;/b&gt;&lt;/u&gt;&amp;nbsp;&amp;nbsp;&lt;font face=&quot;Courier New&quot; style=&quot;font-size:11px&quot;&gt;alu_env&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#5E9E8F;gradientDirection=south;strokeColor=#222222;strokeWidth=2;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontFamily=Times New Roman;fontSize=16;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="30" y="40" width="580" height="480" as="geometry"/>
+        </mxCell>
+
+        <!-- scoreboard + coverage -->
+        <mxCell id="sb" value="&lt;u&gt;&lt;b&gt;scoreboard&lt;/b&gt;&lt;/u&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot; style=&quot;font-size:11px&quot;&gt;alu_scoreboard&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDE7F2;gradientColor=#F3B3D3;gradientDirection=south;strokeColor=#222222;strokeWidth=1.5;shadow=1;fontFamily=Times New Roman;fontSize=16;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="65" y="80" width="250" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="cov" value="&lt;u&gt;&lt;b&gt;coverage&lt;/b&gt;&lt;/u&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot; style=&quot;font-size:11px&quot;&gt;alu_coverage&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FDE7F2;gradientColor=#F3B3D3;gradientDirection=south;strokeColor=#222222;strokeWidth=1.5;shadow=1;fontFamily=Times New Roman;fontSize=16;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="340" y="80" width="250" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="sb_imp" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#222222;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="181" y="131" width="18" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="cov_imp" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#222222;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="456" y="131" width="18" height="18" as="geometry"/>
+        </mxCell>
+
+        <!-- agent -->
+        <mxCell id="agent" value="&lt;u&gt;&lt;b&gt;agent&lt;/b&gt;&lt;/u&gt;&amp;nbsp;&amp;nbsp;&lt;font face=&quot;Courier New&quot; style=&quot;font-size:11px&quot;&gt;alu_agent&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF5FA;gradientColor=#FAD3E6;gradientDirection=south;strokeColor=#222222;strokeWidth=1.5;verticalAlign=top;align=left;spacingLeft=10;spacingTop=2;fontFamily=Times New Roman;fontSize=16;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="50" y="175" width="540" height="325" as="geometry"/>
+        </mxCell>
+
+        <!-- sequencer with sequence + seq_item cards -->
+        <mxCell id="sqr" value="&lt;u&gt;&lt;b&gt;sequencer&lt;/b&gt;&lt;/u&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#3D8EF0;gradientDirection=south;strokeColor=#222222;strokeWidth=1.5;shadow=1;verticalAlign=bottom;spacingBottom=8;fontFamily=Times New Roman;fontSize=16;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="330" y="215" width="240" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="seq_back" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F2F2F2;gradientColor=#AFAFAF;gradientDirection=south;strokeColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="402" y="229" width="104" height="38" as="geometry"/>
+        </mxCell>
+        <mxCell id="seq" value="sequence&lt;br&gt;&lt;font face=&quot;Courier New&quot; style=&quot;font-size:9px&quot;&gt;alu_rand_seq&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F7F7F7;gradientColor=#B8B8B8;gradientDirection=south;strokeColor=#555555;shadow=1;fontFamily=Times New Roman;fontSize=12;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="396" y="235" width="104" height="38" as="geometry"/>
+        </mxCell>
+        <mxCell id="item" value="seq_item" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFC233;gradientColor=#F29A00;gradientDirection=south;strokeColor=#B36B00;fontFamily=Times New Roman;fontSize=10;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="372" y="226" width="52" height="16" as="geometry"/>
+        </mxCell>
+        <mxCell id="sqr_export" value="" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFFFFF;strokeColor=#222222;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="441" y="306" width="18" height="18" as="geometry"/>
+        </mxCell>
+
+        <!-- driver + monitor -->
+        <mxCell id="drv" value="&lt;u&gt;&lt;b&gt;driver&lt;/b&gt;&lt;/u&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot; style=&quot;font-size:11px&quot;&gt;alu_driver&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#3D8EF0;gradientDirection=south;strokeColor=#222222;strokeWidth=1.5;shadow=1;fontFamily=Times New Roman;fontSize=16;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="330" y="385" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="drv_port" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#222222;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="443" y="378" width="14" height="14" as="geometry"/>
+        </mxCell>
+        <mxCell id="mon" value="&lt;u&gt;&lt;b&gt;monitor&lt;/b&gt;&lt;/u&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot; style=&quot;font-size:11px&quot;&gt;alu_monitor&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;gradientColor=#3D8EF0;gradientDirection=south;strokeColor=#222222;strokeWidth=1.5;shadow=1;fontFamily=Times New Roman;fontSize=16;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="70" y="385" width="240" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="mon_ap" value="" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#222222;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="180" y="375" width="20" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- DUT + interface (interface drawn on top, overlapping the DUT like the reference) -->
+        <mxCell id="dut" value="&lt;u&gt;&lt;b&gt;DUT&lt;/b&gt;&lt;/u&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot; style=&quot;font-size:11px&quot;&gt;alu.sv&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFF6D5;gradientColor=#FFD45A;gradientDirection=south;strokeColor=#B59B4A;strokeWidth=1.5;verticalAlign=bottom;spacingBottom=12;fontFamily=Times New Roman;fontSize=16;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="30" y="585" width="580" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="if" value="&lt;u&gt;&lt;b&gt;interface&lt;/b&gt;&lt;/u&gt;&amp;nbsp;&amp;nbsp;&lt;font face=&quot;Courier New&quot; style=&quot;font-size:11px&quot;&gt;alu_if&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAF6E0;gradientColor=#A9D98A;gradientDirection=south;strokeColor=#6E9E52;strokeWidth=1.5;shadow=1;fontFamily=Times New Roman;fontSize=16;fontColor=#1A2A5A;" vertex="1" parent="1">
+          <mxGeometry x="40" y="550" width="560" height="44" as="geometry"/>
+        </mxCell>
+
+        <!-- connections -->
+        <mxCell id="e_seq_drv" style="endArrow=block;endFill=1;html=1;strokeColor=#222222;strokeWidth=1.5;" edge="1" parent="1" source="sqr_export" target="drv_port">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_mon_sb" style="endArrow=block;endFill=1;html=1;strokeColor=#222222;strokeWidth=1.5;" edge="1" parent="1" source="mon_ap" target="sb_imp">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_mon_cov" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;endFill=1;html=1;strokeColor=#222222;strokeWidth=1.5;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="mon_ap" target="cov_imp">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="190" y="160"/>
+              <mxPoint x="465" y="160"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_drv_if" style="endArrow=block;endFill=1;html=1;strokeColor=#222222;strokeWidth=1.5;exitX=0.5;exitY=1;entryX=0.732;entryY=0;" edge="1" parent="1" source="drv" target="if">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_if_mon" style="endArrow=block;endFill=1;html=1;strokeColor=#222222;strokeWidth=1.5;exitX=0.268;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="if" target="mon">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
