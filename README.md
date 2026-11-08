@@ -124,17 +124,18 @@ Four invariants are checked on every simulation run (synthesis ignores them):
 
 | Version | Cycles | Instrs | CPI | Speedup |
 |---------|--------|--------|-----|---------|
-| Scalar (RV32M `mul`) | 1,065 | 835 | 1.275 | 1.00× |
-| SIMD (`PDOT`) | 293 | 195 | 1.503 | 3.63× |
-| Parallel MAC | 79 | 22 | 3.59 | 13.48× |
-| Systolic Array | 87 | 26 | 3.35 | 12.24× |
+| Scalar (RV32M `mul`) | 1,065 | 911 | 1.169 | 1.00× |
+| SIMD (`PDOT`) | 293 | 224 | 1.308 | 3.63× |
+| Parallel MAC | 79 | 31 | 2.55 | 13.48× |
+| Systolic Array | 87 | 37 | 2.35 | 12.24× |
 
 - **Scalar:** triple-nested loop with hardware `mul`, 98.3% D$ hit rate.
-- **SIMD:** instruction scheduling removes the load-use stall before each PDOT. The 2-cycle SIMD stall added for timing closure raises CPI to 1.503. 96.2% D$ hit rate.
-- **Accelerators:** 4 (MAC) and 11 (systolic) compute cycles. The rest is AXI4-Lite setup and readback, which amortizes on larger matrices.
+- **SIMD:** instruction scheduling removes the load-use stall before each PDOT. The 2-cycle SIMD stall added for timing closure raises CPI to 1.308. 96.2% D$ hit rate.
+- **Accelerators:** 4 (MAC) and 11 (systolic) compute cycles. The rest is the AXI4-Lite operand writes, STATUS polling and the CYCLES read. The C readback runs after the measurement ends.
+- **Systolic vs MAC:** the 7 extra compute cycles cost two extra STATUS polls (6 cycles in the counts). The systolic wavefront needs 3N−1 cycles to fill and drain, against N for the broadcast MAC.
 - **16×16 tiled** (`make sim MODULE=matmul_16x16`): all-ones matrices as 16 tiles × 4 K-passes (CTRL=1, then 3). Every C[i][j] = 16, which proves the accumulator chains across passes.
 
-Instruction counts use the corrected PMU (`instr_retired` gated by `!mem_wb_stall`).
+Instruction counts come from the PMU, which counts every instruction that leaves WB, including stores and branches, but not bubbles or trapping instructions.
 
 ---
 
@@ -148,7 +149,7 @@ Instruction counts use the corrected PMU (`instr_retired` gated by `!mem_wb_stal
 
 | Cycles | Instructions | CPI | Branch mispredicts | D$ misses | I$ misses |
 |--------|--------------|-----|--------------------|-----------|-----------|
-| 5,468,472 | 4,039,097 | 1.354 | 2.63% | 51 | 58 |
+| 5,468,472 | 4,919,685 | 1.112 | 2.63% | 51 | 58 |
 
 Run it with `cd blackhole && make`. Physics and build details are in [`blackhole/README.md`](blackhole/README.md).
 
@@ -329,10 +330,10 @@ make sim MODULE=mul_div
 
 # matrix multiply benchmark
 make sim MODULE=matmul
-# Scalar:       1065 cycles   835 instrs   CPI=1.275   1.00x
-# SIMD:          293 cycles   195 instrs   CPI=1.503   3.63x
-# Parallel MAC:   79 cycles    22 instrs   CPI=3.59   13.48x
-# Systolic:       87 cycles    26 instrs   CPI=3.35   12.24x
+# Scalar:       1065 cycles   911 instrs   CPI=1.169   1.00x
+# SIMD:          293 cycles   224 instrs   CPI=1.308   3.63x
+# Parallel MAC:   79 cycles    31 instrs   CPI=2.55   13.48x
+# Systolic:       87 cycles    37 instrs   CPI=2.35   12.24x
 
 # waveforms
 make wave MODULE=top_pipeline

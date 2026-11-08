@@ -136,6 +136,7 @@ module top_pipeline #(
     logic [4:0]  mem_rd_addr;
     logic [31:0] mem_pc_plus4;
     logic        mem_reg_we, mem_mem_we, mem_mem_re;
+    logic        mem_valid;
     logic [1:0]  mem_wb_sel;
     logic [2:0]  mem_funct3;
 
@@ -146,6 +147,7 @@ module top_pipeline #(
     logic [31:0] wb_pc_plus4;
     logic [4:0]  wb_rd_addr;
     logic        wb_reg_we;
+    logic        wb_valid;
     logic [1:0]  wb_wb_sel;
     logic [31:0] wb_data;
 
@@ -943,6 +945,7 @@ module top_pipeline #(
         .ex_mem_re     (ex_mem_re && !trap),
         .ex_wb_sel     (ex_wb_sel),
         .ex_funct3     (ex_funct3),
+        .ex_valid      (ex_valid && !trap),
         .ex_alu_result (ex_result),
         .ex_alu_zero   (ex_alu_zero),
         .ex_rs2_data   (ex_fwd_b),
@@ -953,6 +956,7 @@ module top_pipeline #(
         .mem_mem_re    (mem_mem_re),
         .mem_wb_sel    (mem_wb_sel),
         .mem_funct3    (mem_funct3),
+        .mem_valid     (mem_valid),
         .mem_alu_result(mem_alu_result),
         .mem_alu_zero  (mem_alu_zero),
         .mem_rs2_data  (mem_rs2_data),
@@ -1004,12 +1008,14 @@ module top_pipeline #(
         .mem_reg_we     (mem_reg_we),
         .mem_wb_sel     (mem_wb_sel),
         .mem_rd_addr    (mem_rd_addr),
+        .mem_valid      (mem_valid),
         .mem_alu_result (mem_alu_result),
         .mem_read_data  (mem_read_data_mux),
         .mem_pc_plus4   (mem_pc_plus4),
         .wb_reg_we      (wb_reg_we),
         .wb_wb_sel      (wb_wb_sel),
         .wb_rd_addr     (wb_rd_addr),
+        .wb_valid       (wb_valid),
         .wb_alu_result  (wb_alu_result),
         .wb_read_data   (wb_read_data),
         .wb_pc_plus4    (wb_pc_plus4),
@@ -1058,8 +1064,9 @@ module top_pipeline #(
         .branch_mispredict(mispredict)
     );
 
-    // instruction retired
-    assign instr_retired = wb_reg_we && !mem_wb_stall;
+    // instruction retired: every real instruction leaving WB, including stores
+    // and branches. Bubbles and trapping instructions carry wb_valid = 0.
+    assign instr_retired = wb_valid && !mem_wb_stall;
 
     // is_io covers all 0xFFFF.... addresses including PMU.
     // is_perf narrows to the PMU sub-range (0xFFFF20xx).

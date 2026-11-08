@@ -11,12 +11,14 @@ module ex_mem_reg (
     input  logic        ex_mem_re,
     input  logic [1:0]  ex_wb_sel,
     input  logic [2:0]  ex_funct3,
+    input  logic        ex_valid,       // 0 for a bubble or a trapping instruction
 
     output logic        mem_reg_we,
     output logic        mem_mem_we,
     output logic        mem_mem_re,
     output logic [1:0]  mem_wb_sel,
     output logic [2:0]  mem_funct3,
+    output logic        mem_valid,
 
     // data
     input  logic [31:0] ex_alu_result,
@@ -39,6 +41,7 @@ module ex_mem_reg (
             mem_mem_re     <= 0;
             mem_wb_sel     <= 2'b00;
             mem_funct3     <= 3'b000;
+            mem_valid      <= 0;
             mem_alu_result <= 32'd0;
             mem_alu_zero   <= 0;
             mem_rs2_data   <= 32'd0;
@@ -50,6 +53,7 @@ module ex_mem_reg (
             mem_mem_re     <= ex_mem_re;
             mem_wb_sel     <= ex_wb_sel;
             mem_funct3     <= ex_funct3;
+            mem_valid      <= ex_valid;
             mem_alu_result <= ex_alu_result;
             mem_alu_zero   <= ex_alu_zero;
             mem_rs2_data   <= ex_rs2_data;

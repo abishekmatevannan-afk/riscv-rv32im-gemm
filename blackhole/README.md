@@ -46,8 +46,8 @@ From the hardware performance counters during the full render (`make`):
 | Metric | Value |
 |--------|-------|
 | Cycles | 5,468,472 (≈ 69 ms at the core's 79 MHz) |
-| Instructions retired | 4,039,097 |
-| CPI | 1.354 |
+| Instructions retired | 4,919,685 |
+| CPI | 1.112 |
 | Branch mispredicts | 2.63% of 900,016 branches |
 | D-cache misses | 51 (the whole table fits in cache) |
 | I-cache misses | 58 (the whole program fits in cache) |

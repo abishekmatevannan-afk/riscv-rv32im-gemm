@@ -119,16 +119,16 @@ Both instances are 256×32 (1 KB each). Read path is combinational; BRAM inferen
 
 ### 4×4 UINT8 GEMM Benchmark (`make sim MODULE=matmul`)
 
-Instruction counter uses corrected PMU: `instr_retired = wb_reg_we && !mem_wb_stall` (prior to this fix, stall cycles were counted as extra retirements, inflating instruction counts).
+Instruction counter: `instr_retired = wb_valid && !mem_wb_stall`, so every instruction leaving WB counts once, including stores and branches. Bubbles and trapping instructions carry `wb_valid = 0`. (An earlier version counted `wb_reg_we`, which skipped stores and branches and counted flushed NOP bubbles.)
 
 | Version | Cycles | Instrs | CPI | Speedup vs Scalar |
 |---------|--------|--------|-----|-------------------|
-| Scalar (RV32M mul) | 1,065 | 835 | 1.275 | 1.00× |
-| SIMD (PDOT) | 293 | 195 | 1.503 | 3.63× |
-| Parallel MAC | 79 | 22 | 3.59 | 13.48× |
-| Systolic array | 87 | 26 | 3.35 | 12.24× |
+| Scalar (RV32M mul) | 1,065 | 911 | 1.169 | 1.00× |
+| SIMD (PDOT) | 293 | 224 | 1.308 | 3.63× |
+| Parallel MAC | 79 | 31 | 2.55 | 13.48× |
+| Systolic array | 87 | 37 | 2.35 | 12.24× |
 
-Scalar uses hardware `mul` (RV32M) in a triple-nested loop; 64 load-use stalls from `lbu→mul` on each k-iteration. SIMD CPI increase (1.275→1.503) reflects the two-stall-cycle cost of registered SIMD inputs; speedup drop (4.08×→3.63×) is the direct cost of closing timing on the SIMD carry-chain path. Parallel MAC and Systolic CPIs (3.59 and 3.35) are dominated by AXI4-Lite register-write setup overhead on a 4×4 problem — the accelerators compute in 4 and 11 cycles respectively; at larger matrix sizes CPU overhead amortizes and speedup grows.
+Scalar uses hardware `mul` (RV32M) in a triple-nested loop; 64 load-use stalls from `lbu→mul` on each k-iteration. SIMD CPI (1.308) includes the two-stall-cycle cost of registered SIMD inputs; the speedup drop (4.08×→3.63×) is the direct cost of closing timing on the SIMD carry-chain path. Parallel MAC and Systolic CPIs (2.55 and 2.35) are dominated by AXI4-Lite operand writes and STATUS polling on a 4×4 problem: the accelerators compute in 4 and 11 cycles respectively. The C readback runs after the measured window.
 
 ---
 
