@@ -173,6 +173,29 @@ uvm-alu: $(UVM_ALU_OBJ)/Vtb_alu_uvm
 	echo "PASS: $(TEST) seed $(SEED)"
 
 
+# make uvm-alu-regress SEEDS="<n> <n> ..."
+# Run alu_rand_test (10,000 transactions) once per seed, then report each
+# seed's functional coverage and the merged total (a bin counts as hit if any
+# seed hit it). Exits nonzero if any seed fails.
+#   Example: make uvm-alu-regress SEEDS="1 2 3 4 5"
+SEEDS ?= 1 2 3
+
+uvm-alu-regress: $(UVM_ALU_OBJ)/Vtb_alu_uvm
+	@for s in $(SEEDS); do \
+		out=$$($(MAKE) --no-print-directory uvm-alu TEST=alu_rand_test SEED=$$s 2>&1); \
+		echo "$$out" | grep -E "^(PASS|FAIL)"; \
+		echo "$$out" | grep -q "^PASS" || exit 1; \
+	done
+	@for s in $(SEEDS); do \
+		printf "  seed %-3s" $$s; \
+		verilator_coverage --report summary --filter-type covergroup \
+			$(SIM_DIR)/uvm_alu_alu_rand_test_$$s.dat | grep covergroup; \
+	done
+	@printf "  merged  "
+	@verilator_coverage --report summary --filter-type covergroup \
+		$(foreach s,$(SEEDS),$(SIM_DIR)/uvm_alu_alu_rand_test_$(s).dat) | grep covergroup
+
+
 # make all
 # Run every testbench with full verbose output — no pass/fail filtering,
 # everything gets printed. Useful when you want to read raw simulation output
@@ -199,4 +222,4 @@ clean:
 	rm -rf $(SIM_DIR)/uvm_alu $(SIM_DIR)/uvm_alu_*
 
 
-.PHONY: sim wave test-all riscv-tests riscv-tests-build uvm-alu all clean
+.PHONY: sim wave test-all riscv-tests riscv-tests-build uvm-alu uvm-alu-regress all clean

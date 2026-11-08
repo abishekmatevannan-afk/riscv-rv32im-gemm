@@ -3,13 +3,11 @@
 > *"Program testing can be used to show the presence of bugs, but never to show their absence!"*
 > — Edsger W. Dijkstra
 
-A UVM verification environment for the core's ALU ([`src/alu.sv`](../../src/alu.sv)), built with UVM 2020.3.1 and run on Verilator. Constrained-random stimulus goes in through an agent, a scoreboard checks every result against an independent reference model, and functional coverage measures what was actually exercised.
+A UVM 2020.3.1 testbench for the core's ALU ([`src/alu.sv`](../../src/alu.sv)), run on Verilator: constrained-random stimulus, a scoreboard with an independent reference model, and functional coverage.
 
 ## Why I built this
 
-The directed testbenches I wrote have an issue of writer's bias where the 'expected result' is something I wrote to be. I pick the inputs and work out the expected answer by hand, so it can only check the cases I thought of. My original ALU testbench even prints `FAIL` without ever failing the run. Industry verification teams use UVM to close that gap. Random stimulus finds cases nobody wrote down, a reference model judges every one of them, and coverage says when you have tested enough. I wanted to learn it by building one.
-
-I picked the ALU on purpose. It is the simplest block in the core, so the hard part would be the methodology and not the design. 
+My directed testbenches have writer's bias: I pick the inputs and work out the expected answers by hand, so they only check the cases I thought of. My original ALU testbench even prints `FAIL` without ever failing the run. Industry verification teams use UVM to close that gap, and I wanted to learn it by building one. I picked the ALU on purpose: it is the simplest block in the core, so the hard part would be the methodology and not the design.
 
 ## Results
 
@@ -19,8 +17,9 @@ I picked the ALU on purpose. It is the simplest block in the core, so the hard p
 | `alu_rand_test`, seed 1 | 10,000 | 0 | 99.00% |
 | `alu_rand_test`, seed 2 | 10,000 | 0 | 98.50% |
 | `alu_rand_test`, seed 3 | 10,000 | 0 | 98.17% |
+| **Seeds 1–3 merged** | **30,000** | **0** | **100% (602/602 bins)** |
 
-A 10,000-transaction run takes about 45 s. Removing `$signed` from the RTL's SRA in a scratch copy made the scoreboard report 99 mismatches in 3,000 transactions, so the checker does catch real bugs.
+Each seed misses a different few rare bins (6, 9 and 11), so merged they hit all 602; `make uvm-alu-regress` reproduces the last four rows. With `$signed` removed from the RTL's SRA in a scratch copy, the scoreboard reported 99 mismatches in 3,000 transactions.
 
 ## How it fits together
 
@@ -28,7 +27,7 @@ A 10,000-transaction run takes about 45 s. Removing `$signed` from the RTL's SRA
   <img src="../../docs/uvm/uvm_alu_tb.png" alt="UVM testbench for the ALU: test, env, agent, scoreboard, coverage, interface, DUT" width="560">
 </p>
 
-The sequencer hands each `seq_item` to the driver through its export (○ to □). The driver drives the pins through the interface, and the monitor rebuilds every transaction from those pins. Its analysis port (◇) broadcasts each one to both the scoreboard and coverage. Source: [`uvm_alu_tb.drawio`](../../docs/uvm/uvm_alu_tb.drawio), editable in draw.io.
+The sequencer hands each `seq_item` to the driver (○ to □); the monitor rebuilds every transaction from the pins and its analysis port (◇) broadcasts it to the scoreboard and coverage. Source: [`uvm_alu_tb.drawio`](../../docs/uvm/uvm_alu_tb.drawio).
 
 | Component | Job |
 |-----------|-----|
@@ -47,7 +46,7 @@ The sequencer hands each `seq_item` to the driver through its export (○ to □
 | Shift ops × `a` class × shift amount × upper bits of `b` set or clear | 168 | Only `b[4:0]` is used; SRA vs SRL sign fill |
 | Every legal op × `zero` flag | 22 | `zero` is correct for every op, not just SUB |
 
-Illegal opcodes (`0xB`–`0xF`) and LUI's `b`-only behavior have their own coverpoints. On seed 1 the crosses reach 340/343, 165/168 and 22/22.
+Illegal opcodes (`0xB`–`0xF`) and LUI's `b`-only behavior have their own coverpoints.
 
 ## Verilator limits found along the way
 
@@ -65,9 +64,10 @@ Illegal opcodes (`0xB`–`0xF`) and LUI's `b`-only behavior have their own cover
 ```bash
 make uvm-alu                              # alu_smoke_test, seed 1
 make uvm-alu TEST=alu_rand_test SEED=7    # 10,000 transactions
+make uvm-alu-regress                      # seeds 1-3, per-seed and merged coverage
 ```
 
-Each run prints PASS or FAIL and writes `sim/uvm_alu_<test>_<seed>.log` plus coverage data in `.dat`. The first compile takes about 40 s.
+Each run prints PASS or FAIL and writes a log and a coverage `.dat` to `sim/`. Compiling takes about 40 s, a 10,000-transaction run about 45 s, and `SEEDS="1 2 3 4 5"` picks the regression's seeds.
 
 Requires Verilator 5.x with the z3 solver, and UVM 2020.3.1 at `UVM_HOME` (default `~/tools/uvm-core-2020.3.1/src`).
 
