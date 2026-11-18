@@ -20,7 +20,7 @@ module hazard_unit (
     input  logic       ex_predict_taken,   // was the branch predicted taken?
 
     input  logic       cache_stall,     // stall from dcache miss
-    input  logic       div_busy,        // stall from multi-cycle divider
+    input  logic       muldiv_busy,     // stall from registered multiplier (1 cycle) or divider
     input  logic       simd_stall,      // 2-cycle stall while registered SIMD inputs/result settle
     input  logic       icache_stall,
 
@@ -41,9 +41,9 @@ module hazard_unit (
 
     logic load_use_hazard;
     logic control_hazard;
-    logic any_stall;          // cache miss or divider running
+    logic any_stall;          // cache miss, MUL/DIV or SIMD running
 
-    assign any_stall = cache_stall || div_busy || simd_stall;
+    assign any_stall = cache_stall || muldiv_busy || simd_stall;
 
     // load-use hazard:
     // EX stage is a load AND its destination matches

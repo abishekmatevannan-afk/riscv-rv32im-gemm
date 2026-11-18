@@ -22,7 +22,8 @@ INTEGRATION = top top_pipeline uart_integration uart_mem_map \
               matmul_16x16 \
               fence_ebreak \
               precise_trap \
-              div_pipeline
+              div_pipeline \
+              mul_pipeline
 
 
 # make sim MODULE=<name>

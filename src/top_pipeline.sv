@@ -93,7 +93,7 @@ module top_pipeline #(
     logic        simd_stall;
     logic [31:0] muldiv_result;
     logic        is_muldiv;
-    logic        div_busy;
+    logic        muldiv_busy;
     logic [31:0] ex_result;
 
     logic        ex_reg_we, ex_mem_we, ex_mem_re;
@@ -841,8 +841,9 @@ module top_pipeline #(
         .b      (ex_fwd_b),
         .funct3 (ex_funct3),
         .start  (is_muldiv),
+        .freeze (cache_stall),   // hold the MUL wait state while a D$ miss freezes EX
         .result (muldiv_result),
-        .busy   (div_busy)
+        .busy   (muldiv_busy)
     );
 
     always_ff @(posedge clk) begin
@@ -878,7 +879,7 @@ module top_pipeline #(
     // WAIT2:        stall=0, EX/MEM advances and captures result_q.
     always_ff @(posedge clk) begin
         if (rst) simd_busy <= 2'd0;
-        else if (!(cache_stall || div_busy)) begin
+        else if (!(cache_stall || muldiv_busy)) begin
             case (simd_busy)
                 2'd0: simd_busy <= is_simd ? 2'd1 : 2'd0;
                 2'd1: simd_busy <= 2'd2;
@@ -1049,7 +1050,7 @@ module top_pipeline #(
         .branch_taken       (ex_branch_taken),
         .ex_predict_taken   (ex_predict_taken),
         .cache_stall      (cache_stall),
-        .div_busy         (div_busy),
+        .muldiv_busy      (muldiv_busy),
         .simd_stall       (simd_stall),
         .icache_stall     (icache_stall),
         .pc_stall         (pc_stall),
