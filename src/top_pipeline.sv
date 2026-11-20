@@ -904,7 +904,7 @@ module top_pipeline #(
     assign ex_branch_signed_lt = ($signed(ex_fwd_a) < $signed(ex_fwd_b));
     assign ex_branch_unsigned_lt = (ex_fwd_a < ex_fwd_b);
 
-    D$ prefetch index: rs1+imm skips the ALU muxes; only bits [11:2] are used
+    //D$ prefetch index: rs1+imm skips the ALU muxes; only bits [11:2] are used
     wire [11:0] dcache_adder_sum;
     assign dcache_adder_sum = ex_fwd_a[11:0] + ex_imm[11:0];
 
