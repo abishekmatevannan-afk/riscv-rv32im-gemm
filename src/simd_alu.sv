@@ -20,6 +20,7 @@
 // funct7=0100000 funct3=101 → PRELU  rs2=x0 (unary)
 
 module simd_alu (
+    input  logic        clk,
     input  logic [31:0] a,
     input  logic [31:0] b,
     input  logic [31:0] acc,        // PMACC accumulator (rd value, forwarded)
@@ -51,6 +52,21 @@ module simd_alu (
     assign mul2 = a2 * b2;
     assign mul3 = a3 * b3;
 
+    // Registered products (same split as pe_cell): the four multiplies run in
+    // WAIT1, the adder tree + accumulate in WAIT2. No reset or enable, so no
+    // mux sits on the multipliers' D inputs. Loading every cycle is safe:
+    // a/b come from simd_a_q/simd_b_q, which hold steady from WAIT1 through
+    // WAIT2 (and through any D$ freeze), so a reload stores the same products.
+    // Used by PMUL, PDOT and PMACC; the other ops read a/b directly.
+    logic [15:0] mul0_q, mul1_q, mul2_q, mul3_q;
+
+    always_ff @(posedge clk) begin
+        mul0_q <= mul0;
+        mul1_q <= mul1;
+        mul2_q <= mul2;
+        mul3_q <= mul3;
+    end
+
     // PADD result (packed add)
     logic [31:0] padd_result;
     assign padd_result = {
@@ -72,18 +88,18 @@ module simd_alu (
     // PMUL result (packed multiply, keep lower 8 bits)
     logic [31:0] pmul_result;
     assign pmul_result = {
-        mul3[7:0],
-        mul2[7:0],
-        mul1[7:0],
-        mul0[7:0]
+        mul3_q[7:0],
+        mul2_q[7:0],
+        mul1_q[7:0],
+        mul0_q[7:0]
     };
 
     // PDOT result (dot product sum)
     logic [31:0] pdot_result;
-    assign pdot_result = {16'd0, mul0} +
-                         {16'd0, mul1} +
-                         {16'd0, mul2} +
-                         {16'd0, mul3};
+    assign pdot_result = {16'd0, mul0_q} +
+                         {16'd0, mul1_q} +
+                         {16'd0, mul2_q} +
+                         {16'd0, mul3_q};
 
     // PSRA: signed byte lanes arithmetic right-shifted by funct7[3:0]
     // shamt≥8 fills all bits with the sign bit (equivalent to shift by 7+)

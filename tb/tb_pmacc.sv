@@ -18,7 +18,15 @@ module tb_pmacc;
     logic [31:0] result;
     logic        valid;
 
+    // simd_alu registers its four products (PMUL/PDOT/PMACC read them a cycle
+    // later). Every check waits #10 from a multiple of 10 ns, so exactly one
+    // posedge (at t+5) lands in each wait and the registered products are
+    // current when the result is checked.
+    logic clk = 0;
+    always #5 clk = ~clk;
+
     simd_alu dut (
+        .clk(clk),
         .a(a), .b(b), .acc(acc),
         .funct3(funct3), .funct7(funct7),
         .result(result), .valid(valid)

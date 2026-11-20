@@ -85,7 +85,6 @@ module top_pipeline #(
     logic [6:0]  ex_funct7;
 
     logic [31:0] simd_result;
-    logic [31:0] simd_result_q;
     logic [31:0] simd_a_q, simd_b_q, simd_acc_q;
     logic        simd_valid;
     logic        is_simd;
@@ -857,6 +856,7 @@ module top_pipeline #(
     end
 
     simd_alu SIMD (
+        .clk     (clk),
         .a       (simd_a_q),
         .b       (simd_b_q),
         .acc     (simd_acc_q),
@@ -866,15 +866,13 @@ module top_pipeline #(
         .valid   (simd_valid)
     );
 
-    always_ff @(posedge clk) begin
-    if (rst) simd_result_q <= 32'd0;
-    else if (simd_stall) simd_result_q <= simd_result;
-    end
 
     // 3-state machine: IDLE(0)→WAIT1(1)→WAIT2(2)→IDLE.
-    // IDLE+is_simd: stall=1, inputs capture at posedge WAIT1.
-    // WAIT1:        stall=1, result correct, result_q captures at posedge WAIT2.
-    // WAIT2:        stall=0, EX/MEM advances and captures result_q.
+    // IDLE+is_simd: stall=1, operands capture into simd_*_q at posedge WAIT1.
+    // WAIT1:        stall=1, the four 8x8 products capture into SIMD.mul*_q
+    //               at posedge WAIT2 (pipeline split inside simd_alu).
+    // WAIT2:        stall=0, adder tree + accumulate run from mul*_q and
+    //               EX/MEM captures simd_result directly (no result register).
     always_ff @(posedge clk) begin
         if (rst) simd_busy <= 2'd0;
         else if (!(cache_stall || muldiv_busy)) begin
@@ -892,7 +890,7 @@ module top_pipeline #(
     logic ex_csr_re;
     assign ex_csr_re = (ex_csr_funct3 != 3'b000);
 
-    assign ex_result = is_simd   ? simd_result_q  :
+    assign ex_result = is_simd   ? simd_result    :
                        is_muldiv ? muldiv_result   :
                        ex_csr_re ? csr_rd          :
                                    ex_alu_result;
