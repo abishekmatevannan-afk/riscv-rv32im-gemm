@@ -900,9 +900,13 @@ module top_pipeline #(
     //Dedicated branch comparator to bypass alu_src mux, alu result mux, and zero flag.
 
     wire ex_branch_equal, ex_branch_signed_lt, ex_branch_unsigned_lt;
-        assign ex_branch_equal = (ex_fwd_a == ex_fwd_b);
-        assign ex_branch_signed_lt = ($signed(ex_fwd_a) < $signed(ex_fwd_b));
-        assign ex_branch_unsigned_lt = (ex_fwd_a < ex_fwd_b);
+    assign ex_branch_equal = (ex_fwd_a == ex_fwd_b);
+    assign ex_branch_signed_lt = ($signed(ex_fwd_a) < $signed(ex_fwd_b));
+    assign ex_branch_unsigned_lt = (ex_fwd_a < ex_fwd_b);
+
+    D$ prefetch index: rs1+imm skips the ALU muxes; only bits [11:2] are used
+    wire [11:0] dcache_adder_sum;
+    assign dcache_adder_sum = ex_fwd_a[11:0] + ex_imm[11:0];
 
     always_comb begin
         ex_branch_taken = 0;
@@ -984,7 +988,7 @@ module top_pipeline #(
         .cache_stall (cache_stall),
         .cache_hit   (cache_hit),
         .cache_miss  (cache_miss),
-        .ex_addr_i   (ex_alu_result),
+        .ex_addr_i   ({20'd0,dcache_adder_sum}),
         .ex_stall_i  (ex_mem_stall),
         .mem_we      (dmem_we),
         .mem_re      (dmem_re),
