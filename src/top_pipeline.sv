@@ -902,9 +902,10 @@ module top_pipeline #(
     assign ex_branch_signed_lt = ($signed(ex_fwd_a) < $signed(ex_fwd_b));
     assign ex_branch_unsigned_lt = (ex_fwd_a < ex_fwd_b);
 
-    //D$ prefetch index: rs1+imm skips the ALU muxes; only bits [11:2] are used
-    wire [11:0] dcache_adder_sum;
-    assign dcache_adder_sum = ex_fwd_a[11:0] + ex_imm[11:0];
+    // Load/store address low bits (rs1 + imm) without the ALU muxes. Feeds the
+    // D$ prefetch index ([11:2]) and the misalignment check in EU ([1:0]).
+    wire [11:0] ex_mem_addr_lo;
+    assign ex_mem_addr_lo = ex_fwd_a[11:0] + ex_imm[11:0];
 
     always_comb begin
         ex_branch_taken = 0;
@@ -986,7 +987,7 @@ module top_pipeline #(
         .cache_stall (cache_stall),
         .cache_hit   (cache_hit),
         .cache_miss  (cache_miss),
-        .ex_addr_i   ({20'd0,dcache_adder_sum}),
+        .ex_addr_i   ({20'd0, ex_mem_addr_lo}),
         .ex_stall_i  (ex_mem_stall),
         .mem_we      (dmem_we),
         .mem_re      (dmem_re),
@@ -1126,7 +1127,7 @@ module top_pipeline #(
         .ex_mem_re    (ex_mem_re),
         .ex_mem_we    (ex_mem_we),
         .ex_funct3    (ex_funct3),
-        .ex_alu_result(ex_alu_result),
+        .ex_alu_result({20'd0, ex_mem_addr_lo}),  // only addr[1:0] is checked; skips the ALU
         .ext_irq      (ext_irq),
         .mie_global   (mie_global),
         .meie         (meie),
