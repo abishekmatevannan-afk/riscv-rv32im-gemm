@@ -332,7 +332,7 @@ module top_pipeline #(
     assign pc_next = trap                ? mtvec_out  :
                      ex_mret             ? mepc_out   :
                      ex_jump_mispredict  ? ex_pc_jump :
-                     mispredict          ? (ex_branch_taken ? ex_pc_branch : ex_pc_plus4) :
+                     mispredict          ? (ex_predict_taken ? ex_pc_plus4 : ex_pc_branch) :
                      bp_predict_taken    ? bp_predict_target :
                                           if_pc_plus4;
 
