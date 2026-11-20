@@ -104,7 +104,6 @@ module top_pipeline #(
     logic [31:0] ex_fwd_a, ex_fwd_b, ex_fwd_acc;
     logic [31:0] ex_alu_a, ex_alu_b;
     logic [31:0] ex_alu_result;
-    logic        ex_alu_zero;
     logic [31:0] ex_pc_branch, ex_pc_jump;
     logic        ex_branch_taken;
 
@@ -131,7 +130,6 @@ module top_pipeline #(
     // MEM STAGE SIGNALS
     // =========================================================
     logic [31:0] mem_alu_result;
-    logic        mem_alu_zero;
     logic [31:0] mem_rs2_data;
     logic [4:0]  mem_rd_addr;
     logic [31:0] mem_pc_plus4;
@@ -828,7 +826,7 @@ module top_pipeline #(
         .b        (ex_alu_b),
         .alu_ctrl (ex_alu_ctrl),
         .result   (ex_alu_result),
-        .zero     (ex_alu_zero)
+        .zero     ()               // unused: branches use the dedicated comparator below
     );
 
     assign is_simd   = (ex_opcode == 7'b0001011);
@@ -899,19 +897,23 @@ module top_pipeline #(
                        ex_csr_re ? csr_rd          :
                                    ex_alu_result;
 
-    logic ex_alu_bit0;
-    assign ex_alu_bit0 = ex_alu_result[0];
+    //Dedicated branch comparator to bypass alu_src mux, alu result mux, and zero flag.
+
+    wire ex_branch_equal, ex_branch_signed_lt, ex_branch_unsigned_lt;
+        assign ex_branch_equal = (ex_fwd_a == ex_fwd_b);
+        assign ex_branch_signed_lt = ($signed(ex_fwd_a) < $signed(ex_fwd_b));
+        assign ex_branch_unsigned_lt = (ex_fwd_a < ex_fwd_b);
 
     always_comb begin
         ex_branch_taken = 0;
         if (ex_branch) begin
             case (ex_funct3)
-                3'b000: ex_branch_taken = ex_alu_zero;
-                3'b001: ex_branch_taken = ~ex_alu_zero;
-                3'b100: ex_branch_taken = ex_alu_bit0;
-                3'b101: ex_branch_taken = ~ex_alu_bit0;
-                3'b110: ex_branch_taken = ex_alu_bit0;
-                3'b111: ex_branch_taken = ~ex_alu_bit0;
+            3'b000: ex_branch_taken = ex_branch_equal;        // BEQ
+            3'b001: ex_branch_taken = !ex_branch_equal;       // BNE
+            3'b100: ex_branch_taken = ex_branch_signed_lt;    // BLT
+            3'b101: ex_branch_taken = !ex_branch_signed_lt;   // BGE
+            3'b110: ex_branch_taken = ex_branch_unsigned_lt; // BLTU
+            3'b111: ex_branch_taken = !ex_branch_unsigned_lt;// BGEU
                 default: ex_branch_taken = 0;
             endcase
         end
@@ -948,7 +950,6 @@ module top_pipeline #(
         .ex_funct3     (ex_funct3),
         .ex_valid      (ex_valid && !trap),
         .ex_alu_result (ex_result),
-        .ex_alu_zero   (ex_alu_zero),
         .ex_rs2_data   (ex_fwd_b),
         .ex_rd_addr    (ex_rd_addr),
         .ex_pc_plus4   (ex_pc_plus4),
@@ -959,7 +960,6 @@ module top_pipeline #(
         .mem_funct3    (mem_funct3),
         .mem_valid     (mem_valid),
         .mem_alu_result(mem_alu_result),
-        .mem_alu_zero  (mem_alu_zero),
         .mem_rs2_data  (mem_rs2_data),
         .mem_rd_addr   (mem_rd_addr),
         .mem_pc_plus4  (mem_pc_plus4),
