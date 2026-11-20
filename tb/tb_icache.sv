@@ -38,15 +38,11 @@ module tb_icache;
 
     // =========================================================
     // Fake instruction memory — combinational, word addressed
-    // mem[i] = 0xAA000000 | i so every word is distinguishable
+    // word at byte address A = 0xAA000000 | (A >> 2), so every word is
+    // distinguishable, including addresses above 1 KB that share a cache
+    // index with a lower address (T9 needs 0x1050 to differ from 0x0050).
     // =========================================================
-    logic [31:0] fake_imem [0:255];
-    integer fi;
-    initial begin
-        for (fi = 0; fi < 256; fi++)
-            fake_imem[fi] = 32'hAA000000 | fi;
-    end
-    assign mem_rd = fake_imem[mem_addr[31:2]];
+    assign mem_rd = 32'hAA000000 | {8'h00, mem_addr[25:2]};
 
     // =========================================================
     // Clock
@@ -310,6 +306,43 @@ module tb_icache;
             cpu_addr = 32'h0000004C;
             @(posedge clk); #1;
             check ("T8 word 3", cpu_rd, 32'hAA000013);
+        end
+
+        // =====================================================
+        // T9: conflict fill aborted by a flush must not leave a stale hit
+        //   0x0050 and 0x1050 share index 5 (addr[11:4]) with different tags.
+        //   1. Fill line 5 with 0x0050's words (tag 0x00000).
+        //   2. Miss on 0x1050: the fill starts overwriting line 5's data with
+        //      0x1050's words (tag 0x00001).
+        //   3. Flush after two words are written (branch correction).
+        //   4. Fetch 0x0050 again. It must return 0x0050's word, not the
+        //      0x1050 word the aborted fill left in data[].
+        //   Bug this catches: if valid/tag are left untouched when a fill
+        //   is aborted, line 5 still claims "valid, tag 0" over mixed data.
+        // =====================================================
+        $display("\n--- T9: aborted conflict fill leaves no stale hit ---");
+        begin
+            logic [31:0] result;
+            int          guard;
+            drain(32'h00000050, result);
+            check("T9 0x0050 filled", result, 32'hAA000014);
+
+            cpu_addr = 32'h00001050;            // same index, other tag: miss
+            guard = 0;
+            @(posedge clk); #1;
+            while (!(DUT.state == 2'b01 && DUT.fill_wait && DUT.fill_word == 2'd2)
+                   && guard < 20) begin
+                @(posedge clk); #1; guard++;
+            end
+            check1("T9 conflict fill reached word 2", DUT.fill_word == 2'd2, 1'b1);
+
+            flush    = 1;                       // abort: words 0 and 1 already written
+            cpu_addr = 32'h00000050;            // redirect back to the old line
+            @(posedge clk); #1;
+            flush    = 0;
+
+            drain(32'h00000050, result);
+            check("T9 0x0050 after aborted fill", result, 32'hAA000014);
         end
 
         // =====================================================

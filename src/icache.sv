@@ -88,12 +88,28 @@ module icache (
     logic [1:0] fill_word;
     logic        fill_wait;
 
-    integer i;
-
     // Port A — write-only, no reset clause (required for Vivado BRAM inference)
     always_ff @(posedge clk)
         if (state == FILL && fill_wait)
             data[{addr_idx, fill_word}] <= mem_rd;
+
+    // Valid/tag metadata writes are independent of flush.
+    // Invalidate the line when a fill starts so an aborted fill
+    // cannot leave partially overwritten data marked as valid.
+    always_ff @(posedge clk) begin
+        if (rst) begin
+            for (integer j = 0; j < NUM_LINES; j++) begin
+                valid[j] <= 1'b0;
+            end
+        end else if (state == IDLE && cpu_re && !hit) begin
+            // A: invalidate the target line before overwriting its data
+            valid[addr_idx] <= 1'b0;
+        end else if (state == FILL && fill_wait && fill_word == 2'b11) begin
+            // B: all four words have arrived; commit the new line
+            valid[addr_idx] <= 1'b1;
+            tags[addr_idx]  <= addr_tag;
+        end
+    end
 
     // instruction read mux
     // DONE: use fill_data_q (captured from mem_rd during fill at word_off)
@@ -117,9 +133,6 @@ module icache (
             mem_addr     <= 32'd0;
             request_miss <= 0;
             fill_data_q  <= 32'd0;
-            for (i = 0; i < NUM_LINES; i++) begin
-                valid[i] <= 0;
-            end
         end else if (flush) begin
             // branch correction: abandon partial fill, preserve cached lines
             state        <= IDLE;
@@ -157,8 +170,6 @@ module icache (
                             fill_data_q <= mem_rd;  // save the word cpu_addr needs
 
                         if (fill_word == 2'b11) begin
-                            valid[addr_idx] <= 1;
-                            tags[addr_idx]  <= addr_tag;
                             fill_word       <= 0;
                             fill_wait       <= 0;
                             state           <= DONE;
