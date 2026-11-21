@@ -9,9 +9,9 @@ module tb_csr_regfile;
     logic [31:0] csr_wd, csr_rd;
     logic        trap, mret;
     logic [31:0] trap_cause, trap_epc;
-    logic        ext_irq;
+    logic        ext_irq, timer_irq;
     logic [31:0] mtvec_out, mepc_out;
-    logic        mie_global, meie;
+    logic        mie_global, meie, mtie;
 
     csr_regfile dut (
         .clk          (clk),
@@ -26,10 +26,12 @@ module tb_csr_regfile;
         .trap_epc     (trap_epc),
         .mret         (mret),
         .ext_irq      (ext_irq),
+        .timer_irq    (timer_irq),
         .mtvec_out    (mtvec_out),
         .mepc_out     (mepc_out),
         .mie_global   (mie_global),
-        .meie         (meie)
+        .meie         (meie),
+        .mtie         (mtie)
     );
 
     initial begin
@@ -69,7 +71,7 @@ module tb_csr_regfile;
         $display("========== CSR REGFILE TESTBENCH ==========");
 
         rst = 1; csr_we = 0; trap = 0; mret = 0;
-        ext_irq = 0; csr_addr = 0; csr_wd = 0;
+        ext_irq = 0; timer_irq = 0; csr_addr = 0; csr_wd = 0;
         csr_funct3 = 2'b01;
         trap_cause = 0; trap_epc = 0;
         repeat(3) @(posedge clk); #1;
@@ -185,6 +187,21 @@ module tb_csr_regfile;
         csr_read(12'h304, val);
         if (val == 32'h00000800) $display("PASS: CSRRC rs1=x0 did not modify mie=0x%08h", val);
         else                      $display("FAIL: CSRRC rs1=x0 corrupted mie=0x%08h exp=0x00000800", val);
+
+        // TEST 14: mip.MTIP follows timer_irq, mie.MTIE drives mtie
+        $display("--- TEST 14: timer interrupt bits ---");
+        timer_irq = 1;
+        csr_read(12'h344, val);
+        if (val == 32'h0000_0080) $display("PASS: mip.MTIP set (bit 7)");
+        else                      $display("FAIL: mip = 0x%08h, expected 0x00000080", val);
+        timer_irq = 0;
+        csr_read(12'h344, val);
+        if (val == 32'd0) $display("PASS: mip.MTIP cleared");
+        else              $display("FAIL: mip.MTIP not cleared: 0x%08h", val);
+        csr_write(12'h304, 32'h0000_0080);
+        if (mtie === 1'b1 && meie === 1'b0) $display("PASS: mie.MTIE -> mtie");
+        else                                $display("FAIL: mtie=%b meie=%b after mie=0x80", mtie, meie);
+        csr_write(12'h304, 32'd0);
 
         // TEST 15: MPIE. A trap taken with MIE=0 must not come back with MIE=1.
         $display("--- TEST 15: MRET restores MIE from MPIE ---");

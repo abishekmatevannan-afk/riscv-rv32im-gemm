@@ -19,6 +19,9 @@ module top_pipeline #(
     // =========================================================
     logic        is_perf;
     logic [31:0] perf_rd;
+    logic        is_timer;    // machine timer, 0xFFFF40xx
+    logic [31:0] timer_rd;
+    logic        timer_irq;
     logic        instr_retired;
 
     // Branch predictor signals
@@ -176,7 +179,7 @@ module top_pipeline #(
     logic [31:0] trap_cause, trap_epc;
     logic [31:0] csr_rd;
     logic [31:0] mtvec_out, mepc_out;
-    logic        mie_global, meie;
+    logic        mie_global, meie, mtie;
     logic        ext_irq;
     logic        ex_valid;
     logic        uart_irq;
@@ -388,7 +391,7 @@ module top_pipeline #(
     // IO manager: generates AXI transactions for UART loads and stores.
     // Purely combinational — UART sub responds same cycle (rvalid=arvalid),
     // so the pipeline timing is identical to the old direct connection.
-    assign is_uart  = is_io && !is_perf;
+    assign is_uart  = is_io && !is_perf && !is_timer;
     assign is_accel    = (mem_alu_result[31:16] == 16'hFFFE);
     assign is_systolic = (mem_alu_result[31:16] == 16'hFFFD);
 
@@ -1018,9 +1021,10 @@ module top_pipeline #(
         .is_io       (is_io)
     );
 
-    // Read data mux: PMU > parallel MAC > systolic > UART > cache
+    // Read data mux: PMU > timer > parallel MAC > systolic > UART > cache
     logic [31:0] mem_read_data_mux;
     assign mem_read_data_mux = is_perf     ? perf_rd      :
+                               is_timer    ? timer_rd     :
                                is_accel    ? accel_rd      :
                                is_systolic ? systolic_m_rd :
                                is_io       ? io_m_rd       :
@@ -1123,6 +1127,20 @@ module top_pipeline #(
     logic [31:0] ex_csr_wd;
     assign ex_csr_wd = ex_csr_funct3[2] ? {27'd0, ex_rs1_addr} : ex_fwd_a;
 
+    // Machine timer (CLINT mtime/mtimecmp). Lives in the IO range next to the
+    // PMU, so the D$ bypasses it; is_uart excludes it.
+    assign is_timer = (mem_alu_result[31:8] == 24'hFFFF40);
+
+    clint_timer TIMER (
+        .clk       (clk),
+        .rst       (rst),
+        .we        (mem_mmio_we && is_timer),
+        .addr      (mem_alu_result),
+        .wd        (mem_rs2_data),
+        .rd        (timer_rd),
+        .timer_irq (timer_irq)
+    );
+
     // CSR state commits only on the cycle the EX instruction advances. During a
     // stall the trap/CSR write is held, so an interrupt can't clear MIE mid-stall
     // and then vanish before the pipeline redirects to mtvec.
@@ -1139,10 +1157,12 @@ module top_pipeline #(
         .trap_epc     (trap_epc),
         .mret         (ex_mret && !ex_mem_stall),
         .ext_irq      (ext_irq),
+        .timer_irq    (timer_irq),
         .mtvec_out    (mtvec_out),
         .mepc_out     (mepc_out),
         .mie_global   (mie_global),
-        .meie         (meie)
+        .meie         (meie),
+        .mtie         (mtie)
     );
 
     exception_unit EU (
@@ -1158,6 +1178,8 @@ module top_pipeline #(
         .ext_irq      (ext_irq),
         .mie_global   (mie_global),
         .meie         (meie),
+        .timer_irq    (timer_irq),
+        .mtie         (mtie),
         .trap         (trap),
         .trap_cause   (trap_cause),
         .trap_epc     (trap_epc)

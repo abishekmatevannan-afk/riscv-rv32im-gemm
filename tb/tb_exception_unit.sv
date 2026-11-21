@@ -10,6 +10,7 @@ module tb_exception_unit;
     logic [2:0]  ex_funct3;
     logic [31:0] ex_alu_result;
     logic        ext_irq, mie_global, meie;
+    logic        timer_irq, mtie;
     logic        trap;
     logic [31:0] trap_cause, trap_epc;
 
@@ -25,6 +26,8 @@ module tb_exception_unit;
         .ext_irq      (ext_irq),
         .mie_global   (mie_global),
         .meie         (meie),
+        .timer_irq    (timer_irq),
+        .mtie         (mtie),
         .trap         (trap),
         .trap_cause   (trap_cause),
         .trap_epc     (trap_epc)
@@ -53,6 +56,7 @@ module tb_exception_unit;
         ex_mem_re = 0; ex_mem_we = 0;
         ex_funct3 = 3'b010; ex_alu_result = 32'd0;
         ext_irq = 0; mie_global = 0; meie = 0;
+        timer_irq = 0; mtie = 0;
 
         // TEST 1: no trap baseline
         check("no trap baseline", 0, 32'd0);
@@ -120,6 +124,26 @@ module tb_exception_unit;
         ext_irq = 1; mie_global = 1; meie = 1;
         check("bubble: interrupt deferred", 0, 32'd0);
         ex_valid = 1; ex_illegal = 0; ext_irq = 0; mie_global = 0; meie = 0;
+
+        // TEST 13: timer interrupt needs MIE and MTIE, cause 0x80000007
+        timer_irq = 1; mie_global = 0; mtie = 1;
+        check("timer MIE=0 no trap", 0, 32'd0);
+        timer_irq = 1; mie_global = 1; mtie = 0;
+        check("timer MTIE=0 no trap", 0, 32'd0);
+        timer_irq = 1; mie_global = 1; mtie = 1;
+        check("timer MIE=MTIE=1 trap", 1, 32'h80000007);
+
+        // TEST 14: priority: external > timer > synchronous exceptions
+        ext_irq = 1; meie = 1;
+        check("external beats timer", 1, 32'h8000000B);
+        ext_irq = 0; meie = 0; ex_illegal = 1;
+        check("timer beats illegal", 1, 32'h80000007);
+        ex_illegal = 0;
+
+        // TEST 15: a pending timer interrupt also waits out a bubble
+        ex_valid = 0;
+        check("bubble: timer deferred", 0, 32'd0);
+        ex_valid = 1; timer_irq = 0; mie_global = 0; mtie = 0;
 
         $display("\n========== DONE ==========");
         $finish;

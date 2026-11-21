@@ -2,10 +2,13 @@
 //
 // Priority (highest to lowest):
 //   1. External interrupt (if MIE=1 and MEIE=1 and ext_irq=1)
-//   2. Illegal instruction
-//   3. Load address misaligned
-//   4. Store address misaligned
-//   5. ECALL
+//   2. Timer interrupt    (if MIE=1 and MTIE=1 and timer_irq=1)
+//      External before timer is the privileged spec's order (MEI > MSI > MTI).
+//   3. Illegal instruction
+//   4. Load address misaligned
+//   5. Store address misaligned
+//   6. ECALL
+//   7. EBREAK
 //
 // Misalignment detection:
 //   LH/LHU (funct3=001/101): addr[0] must be 0
@@ -29,6 +32,8 @@ module exception_unit (
     input  logic        ext_irq,         // external interrupt pending
     input  logic        mie_global,      // mstatus.MIE
     input  logic        meie,            // mie.MEIE
+    input  logic        timer_irq,       // mip.MTIP
+    input  logic        mtie,            // mie.MTIE
 
     // outputs
     output logic        trap,            // take a trap this cycle
@@ -69,8 +74,9 @@ module exception_unit (
     end
 
     // interrupt condition
-    logic take_interrupt;
-    assign take_interrupt = ext_irq && mie_global && meie;
+    logic take_interrupt, take_timer;
+    assign take_interrupt = ext_irq   && mie_global && meie;
+    assign take_timer     = timer_irq && mie_global && mtie;
 
     // trap arbitration
     always_comb begin
@@ -85,6 +91,10 @@ module exception_unit (
             if (take_interrupt) begin
                 trap       = 1;
                 trap_cause = 32'h8000000B;
+                trap_epc   = ex_pc;
+            end else if (take_timer) begin
+                trap       = 1;
+                trap_cause = 32'h80000007;  // machine timer interrupt
                 trap_epc   = ex_pc;
             end else if (ex_illegal) begin
                 trap       = 1;

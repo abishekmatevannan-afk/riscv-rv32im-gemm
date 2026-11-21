@@ -4,18 +4,19 @@
 // CSR addresses:
 //   0x300  mstatus  — bit 3 = MIE (machine interrupt enable), bit 7 = MPIE
 //                      (MIE before the last trap; MRET restores MIE from it)
-//   0x304  mie      — bit 11 = MEIE (machine external interrupt enable)
+//   0x304  mie      — bit 11 = MEIE (external), bit 7 = MTIE (timer)
 //   0x305  mtvec    — trap vector base address
 //   0x341  mepc     — exception PC (saved on trap)
 //   0x342  mcause   — trap cause (bit 31 = interrupt, lower bits = code)
-//   0x344  mip      — interrupt pending (read-only)
+//   0x344  mip      — interrupt pending (read-only): bit 11 = MEIP, bit 7 = MTIP
 //
 // Trap causes used in this design:
 //   2   illegal instruction
 //   4   load address misaligned
 //   6   store address misaligned
 //   11  environment call (ECALL)
-//   0x8000000B  external interrupt (machine external interrupt, code=11)
+//   0x8000000B  machine external interrupt (code 11)
+//   0x80000007  machine timer interrupt (code 7)
 
 module csr_regfile (
     input  logic        clk,
@@ -36,30 +37,33 @@ module csr_regfile (
 
     // interrupt pending inputs
     input  logic        ext_irq,         // external interrupt line
+    input  logic        timer_irq,       // machine timer interrupt (mtime >= mtimecmp)
 
     // outputs to pipeline
     output logic [31:0] mtvec_out,       // trap vector
     output logic [31:0] mepc_out,        // exception return PC
     output logic        mie_global,      // global interrupt enable (mstatus.MIE)
-    output logic        meie             // machine external interrupt enable (mie.MEIE)
+    output logic        meie,            // machine external interrupt enable (mie.MEIE)
+    output logic        mtie             // machine timer interrupt enable (mie.MTIE)
 );
 
     // CSR storage
     logic [31:0] mstatus;   // bits 3 (MIE) and 7 (MPIE) are used
-    logic [31:0] mie_reg;   // only bit 11 (MEIE) is implemented
+    logic [31:0] mie_reg;   // bits 11 (MEIE) and 7 (MTIE) are used
     logic [31:0] mtvec;
     logic [31:0] mepc;
     logic [31:0] mcause;
 
     // mip is read-only, reflects live interrupt inputs
     logic [31:0] mip;
-    assign mip = {20'd0, ext_irq, 11'd0};  // bit 11 = MEIP
+    assign mip = {20'd0, ext_irq, 3'd0, timer_irq, 7'd0};  // bit 11 = MEIP, bit 7 = MTIP
 
     // outputs
     assign mtvec_out  = mtvec;
     assign mepc_out   = mepc;
     assign mie_global = mstatus[3];        // MIE bit
     assign meie       = mie_reg[11];       // MEIE bit
+    assign mtie       = mie_reg[7];        // MTIE bit
 
     // CSR read
     always_comb begin
