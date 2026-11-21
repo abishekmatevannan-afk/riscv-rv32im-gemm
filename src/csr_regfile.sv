@@ -2,7 +2,8 @@
 // Supports: mstatus, mie, mtvec, mepc, mcause, mip
 //
 // CSR addresses:
-//   0x300  mstatus  — bit 3 = MIE (machine interrupt enable)
+//   0x300  mstatus  — bit 3 = MIE (machine interrupt enable), bit 7 = MPIE
+//                      (MIE before the last trap; MRET restores MIE from it)
 //   0x304  mie      — bit 11 = MEIE (machine external interrupt enable)
 //   0x305  mtvec    — trap vector base address
 //   0x341  mepc     — exception PC (saved on trap)
@@ -44,7 +45,7 @@ module csr_regfile (
 );
 
     // CSR storage
-    logic [31:0] mstatus;   // only bit 3 (MIE) is implemented
+    logic [31:0] mstatus;   // bits 3 (MIE) and 7 (MPIE) are used
     logic [31:0] mie_reg;   // only bit 11 (MEIE) is implemented
     logic [31:0] mtvec;
     logic [31:0] mepc;
@@ -85,9 +86,14 @@ module csr_regfile (
             // trap takes priority over CSR write
             mepc    <= trap_epc;
             mcause  <= trap_cause;
-            mstatus <= mstatus & ~32'h8;  // clear MIE (disable interrupts in handler)
+            // MPIE <= MIE, MIE <= 0: the handler runs with interrupts off,
+            // and MRET can put back whatever was there before
+            mstatus <= (mstatus & ~32'h88) | {24'd0, mstatus[3], 7'd0};
         end else if (mret) begin
-            mstatus <= mstatus | 32'h8;   // restore MIE on return
+            // MIE <= MPIE, MPIE <= 1 (privileged spec). Setting MIE to 1
+            // unconditionally re-enabled interrupts after an exception taken
+            // with them off.
+            mstatus <= (mstatus & ~32'h8) | {28'd0, mstatus[7], 3'd0} | 32'h80;
         end else if (csr_we) begin
             // csr_funct3: 01=RW, 10=RS(set), 11=RC(clear) — same for reg and imm variants
             case (csr_addr)

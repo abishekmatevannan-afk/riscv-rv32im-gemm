@@ -186,6 +186,29 @@ module tb_csr_regfile;
         if (val == 32'h00000800) $display("PASS: CSRRC rs1=x0 did not modify mie=0x%08h", val);
         else                      $display("FAIL: CSRRC rs1=x0 corrupted mie=0x%08h exp=0x00000800", val);
 
+        // TEST 15: MPIE. A trap taken with MIE=0 must not come back with MIE=1.
+        $display("--- TEST 15: MRET restores MIE from MPIE ---");
+        csr_write(12'h300, 32'h00000008);           // MIE=1, MPIE=0
+        @(posedge clk); #1;
+        trap = 1; trap_epc = 32'h200; trap_cause = 32'd11;
+        @(posedge clk); #1;
+        trap = 0;
+        csr_read(12'h300, val);
+        if (val == 32'h00000080) $display("PASS: trap: MPIE=1 (old MIE), MIE=0");
+        else                      $display("FAIL: mstatus=0x%08h after trap, expected 0x00000080", val);
+        csr_write(12'h300, 32'd0);                  // MIE=0, MPIE=0
+        @(posedge clk); #1;
+        trap = 1;                                   // trap with interrupts off
+        @(posedge clk); #1;
+        trap = 0;
+        @(posedge clk); #1;
+        mret = 1;
+        @(posedge clk); #1;
+        mret = 0;
+        csr_read(12'h300, val);
+        if (!mie_global && val == 32'h00000080) $display("PASS: MRET kept MIE=0, set MPIE=1");
+        else $display("FAIL: mstatus=0x%08h after MRET, expected MIE=0 (0x00000080)", val);
+
         $display("\n========== DONE ==========");
         $finish;
     end
