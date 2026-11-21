@@ -1,5 +1,5 @@
 # mul_pipeline.s — RV32M multiply through the full pipeline, around D$ misses
-# Each result is checked by tb/tb_mul_pipeline.sv from the register file.
+# Each result is checked by tb/tb_mul_div.sv (cpu_mul section) from the register file.
 # Most MULs here enter EX while the instruction ahead of them misses in the
 # D-cache, so the registered multiplier must hold its state under freeze.
     li   t0, 6

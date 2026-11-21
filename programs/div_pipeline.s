@@ -1,5 +1,5 @@
 # div_pipeline.s — RV32M divide/remainder through the full pipeline
-# Each result is checked by tb/tb_div_pipeline.sv from the register file.
+# Each result is checked by tb/tb_mul_div.sv (cpu_div section) from the register file.
     li   a0, 100
     li   a1, 7
     div  a2, a0, a1       # 14

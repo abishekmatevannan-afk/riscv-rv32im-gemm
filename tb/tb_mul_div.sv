@@ -1,7 +1,16 @@
 `timescale 1ns/1ps
 
-// RV32M MUL/DIV unit testbench
-// Covers all 8 operations plus RISC-V spec corner cases
+// RV32M MUL/DIV testbench
+//   Unit tests: mul_div_unit on its own, all 8 operations, RISC-V spec corner
+//   cases, and the freeze input (F1-F4).
+//   Pipeline tests: two top_pipeline instances, each held in reset until its
+//   section runs.
+//     cpu_mul runs programs/mul_pipeline.s: MULs that enter EX while a D$ miss
+//             freezes the pipeline, with a coverage counter that fails the
+//             test if no MUL is ever frozen on arrival.
+//     cpu_div runs programs/div_pipeline.s: DIV/REM signs, divide by zero,
+//             dependent divides through the 32-cycle stall.
+//   Both programs are built with blackhole/rvasm.py.
 
 module tb_mul_div;
 
@@ -14,6 +23,27 @@ module tb_mul_div;
     logic        freeze;
 
     mul_div_unit dut (.*);
+
+    // ── Pipeline instances ───────────────────────────────────────────────
+    logic rst_mul = 1'b1, rst_div = 1'b1;
+
+    top_pipeline #(.HEX_FILE("programs/mul_pipeline.hex")) cpu_mul (
+        .clk(clk), .rst(rst_mul), .uart_tx_pin(), .uart_rx_pin(1'b1)
+    );
+    top_pipeline #(.HEX_FILE("programs/div_pipeline.hex")) cpu_div (
+        .clk(clk), .rst(rst_div), .uart_tx_pin(), .uart_rx_pin(1'b1)
+    );
+
+    // Cycles where a MUL sat in EX while a D$ miss froze it, split by
+    // whether it was frozen on arrival (mul_wait=0) or in its wait cycle.
+    integer frozen_arrival = 0, frozen_wait = 0;
+    always @(posedge clk) begin
+        if (!rst_mul && cpu_mul.MULDIV.freeze && cpu_mul.MULDIV.start &&
+            !cpu_mul.MULDIV.funct3[2]) begin
+            if (cpu_mul.MULDIV.mul_wait) frozen_wait++;
+            else                         frozen_arrival++;
+        end
+    end
 
     always #5 clk = ~clk;
 
@@ -62,6 +92,24 @@ module tb_mul_div;
             pass_count++;
         end
         @(posedge clk); #1; // let DONE→IDLE transition
+    endtask
+
+    task automatic check_mul_reg(input string name, input [4:0] r, input [31:0] exp);
+        if (cpu_mul.RF.regs[r] === exp) begin
+            $display("PASS: %-34s x%0d = 0x%08h", name, r, exp); pass_count++;
+        end else begin
+            $display("FAIL: %-34s x%0d = 0x%08h, expected 0x%08h", name, r,
+                     cpu_mul.RF.regs[r], exp); fail_count++;
+        end
+    endtask
+
+    task automatic check_div_reg(input string name, input [4:0] r, input [31:0] exp);
+        if (cpu_div.RF.regs[r] === exp) begin
+            $display("PASS: %-28s x%0d = %0d", name, r, $signed(exp)); pass_count++;
+        end else begin
+            $display("FAIL: %-28s x%0d = %0d, expected %0d", name, r,
+                     $signed(cpu_div.RF.regs[r]), $signed(exp)); fail_count++;
+        end
     endtask
 
     task automatic expect32(input string name, input [31:0] got, input [31:0] exp);
@@ -187,6 +235,45 @@ module tb_mul_div;
         @(posedge clk); #1;                               // DIV leaves EX
         start = 0;
         expect32("F4 back to IDLE",                    dut.state,    2'b00);
+
+        // ── MUL in the pipeline, around D$ misses ─────────────────────────
+        $display("=== MUL in the pipeline (programs/mul_pipeline.s) ===");
+        @(negedge clk); rst_mul = 0;
+        repeat (1500) @(posedge clk);
+
+        check_mul_reg("load after dirty-evict refill",   9, 32'd1000);
+        check_mul_reg("mul during load miss",           18, 32'd42);
+        check_mul_reg("mulh during load miss",          20, 32'hFFFFFFFF);
+        check_mul_reg("back-to-back mul (first)",       22, 32'd42);
+        check_mul_reg("back-to-back mul (dependent)",   23, 32'd294);
+        check_mul_reg("load-use mul after miss",        25, 32'd7000);
+        check_mul_reg("mulhu after store miss",         26, 32'hFFFFFFFA);
+        check_mul_reg("mul results used afterwards",    27, 32'd7294);
+        $display("MUL frozen in EX: %0d cycles on arrival, %0d in wait cycle",
+                 frozen_arrival, frozen_wait);
+        if (frozen_arrival > 0) begin
+            $display("PASS: a D$ miss froze a MUL on arrival"); pass_count++;
+        end else begin
+            $display("FAIL: no MUL was frozen by a D$ miss; the test lost its coverage"); fail_count++;
+        end
+
+        // ── DIV/REM in the pipeline ───────────────────────────────────────
+        $display("=== DIV/REM in the pipeline (programs/div_pipeline.s) ===");
+        @(negedge clk); rst_div = 0;
+        repeat (1500) @(posedge clk);
+
+        check_div_reg("div 100 / 7",            12, 14);
+        check_div_reg("rem 100 % 7",            13, 2);
+        check_div_reg("div 100 / -3",           14, -33);
+        check_div_reg("rem 100 % -3",           15, 1);
+        check_div_reg("div -100 / -3",          16, 33);
+        check_div_reg("rem -100 % -3",          17, -1);
+        check_div_reg("divu 100 / 0xFFFFFFFD",  18, 0);
+        check_div_reg("remu 100 % 0xFFFFFFFD",  19, 100);
+        check_div_reg("div by zero",            20, 32'hFFFFFFFF);
+        check_div_reg("rem by zero",            21, 100);
+        check_div_reg("dependent div chain",    23, 11);
+        check_div_reg("div result used next",   24, 22);
 
         $display("=================================================");
         $display("  %0d passed   %0d failed", pass_count, fail_count);
