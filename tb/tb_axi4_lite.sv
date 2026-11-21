@@ -4,6 +4,15 @@
 // Tests: icache_manager + dcache_manager + interconnect + ISRAM + DSRAM
 // Simulates the full icache fill path and dcache writeback+fill path
 // using the actual AXI4-Lite fabric, not direct memory connections
+//
+// Last section: MMIO stores fire once even when a stall holds them in MEM.
+// The IO and accelerator managers are combinational, so a store that a
+// MUL/DIV in EX holds in MEM used to write on every stalled cycle: the UART
+// queued the byte again and a parallel MAC CTRL write restarted the compute
+// (Known_limitations §23). programs/mmio_once.s runs on a top_pipeline
+// (cpu_mmio, held in reset until then) with a MUL or DIV right behind each
+// MMIO store; the section counts the writes that reach the UART and the
+// accelerator and checks the results a repeated write would change.
 
 module tb_axi4_lite;
 
@@ -16,6 +25,31 @@ module tb_axi4_lite;
     task tick;
         @(posedge clk); #1;
     endtask
+
+    // ── MMIO one-shot store DUT ──────────────────────────────────────────
+    logic rst_mmio = 1'b1;
+
+    top_pipeline #(.HEX_FILE("programs/mmio_once.hex")) cpu_mmio (
+        .clk(clk), .rst(rst_mmio), .uart_tx_pin(), .uart_rx_pin(1'b1)
+    );
+
+    // Write cycles seen by each subordinate, and how many MMIO store cycles
+    // a stall held in MEM (the coverage this section exists for).
+    integer uart_tx_writes = 0, accel_ctrl_writes = 0, accel_writes = 0;
+    integer stalled_mmio_store = 0;
+    always @(posedge clk) begin
+        if (!rst_mmio) begin
+            if (cpu_mmio.UART_SUB.UART.we && cpu_mmio.UART_SUB.UART.addr == 32'hFFFF0000)
+                uart_tx_writes++;
+            if (cpu_mmio.ACCEL_SUB.awvalid && cpu_mmio.ACCEL_SUB.wvalid) begin
+                accel_writes++;
+                if (cpu_mmio.ACCEL_SUB.awaddr[7:0] == 8'h00) accel_ctrl_writes++;
+            end
+            if (cpu_mmio.mem_mem_we && cpu_mmio.ex_mem_stall &&
+                (cpu_mmio.is_uart || cpu_mmio.is_accel))
+                stalled_mmio_store++;
+        end
+    end
 
     task check32(input string label, input logic [31:0] got, input logic [31:0] exp);
         if (got !== exp) begin
@@ -344,6 +378,21 @@ module tb_axi4_lite;
         end
         ic_mem_re = 0;
         tick;
+
+        // ── MMIO stores held in MEM by a stall write once ─────────────────
+        $display("--- MMIO one-shot stores (programs/mmio_once.s) ---");
+        @(negedge clk); rst_mmio = 0;
+        repeat (600) @(posedge clk); #1;
+
+        check32("T8 UART TX writes (2 stores)",     uart_tx_writes,       2);
+        check32("T8 accel CTRL writes (1 store)",   accel_ctrl_writes,    1);
+        check32("T8 accel writes (8 A/B + 1 CTRL)", accel_writes,         9);
+        check32("T8 C[0][0] after accumulate start", cpu_mmio.RF.regs[19], 4);
+        check32("T8 div after UART store (s0)",     cpu_mmio.RF.regs[8],  14);
+        check32("T8 div after CTRL store (s1)",     cpu_mmio.RF.regs[9],  14);
+        check32("T8 mul after UART store (s2)",     cpu_mmio.RF.regs[18], 700);
+        $display("MMIO store cycles held in MEM by a stall: %0d", stalled_mmio_store);
+        check1 ("T8 a stall held an MMIO store in MEM", stalled_mmio_store > 0, 1'b1);
 
         $display("\n========== AXI4-Lite fabric: %0d passed, %0d failed ==========",
                  pass_count, fail_count);

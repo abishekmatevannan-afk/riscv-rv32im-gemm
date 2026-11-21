@@ -392,10 +392,30 @@ module top_pipeline #(
     assign is_accel    = (mem_alu_result[31:16] == 16'hFFFE);
     assign is_systolic = (mem_alu_result[31:16] == 16'hFFFD);
 
+    // MMIO stores write once. The IO and accelerator managers are
+    // combinational, so a store held in MEM by a back-end stall (MUL/DIV or
+    // SIMD in EX) used to write on every stalled cycle: the UART queued the
+    // byte again and a CTRL write restarted the accelerator. mem_store_done
+    // goes high after the store's first cycle in MEM and clears when EX/MEM
+    // advances, so the next instruction in MEM starts clean.
+    // Only writes are gated. A load must keep driving its read for the whole
+    // stall, because MEM/WB captures the data in the last stalled cycle.
+    // The D$ keeps the ungated mem_mem_we (rewriting the same word is harmless
+    // and the cache has its own FSM).
+    logic mem_store_done;
+    logic mem_mmio_we;
+
+    always_ff @(posedge clk) begin
+        if (rst || !ex_mem_stall) mem_store_done <= 1'b0;
+        else if (mem_mem_we)      mem_store_done <= 1'b1;
+    end
+
+    assign mem_mmio_we = mem_mem_we && !mem_store_done;
+
     axi4_lite_accel_manager ACCEL_MGR (
         .accel_active(is_accel),
         .mem_re      (mem_mem_re),
-        .mem_we      (mem_mem_we),
+        .mem_we      (mem_mmio_we),
         .mem_addr    (mem_alu_result),
         .mem_wdata   (mem_rs2_data),
         .accel_rd    (accel_rd),
@@ -411,7 +431,7 @@ module top_pipeline #(
     axi4_lite_accel_manager SYSTOLIC_MGR (
         .accel_active(is_systolic),
         .mem_re      (mem_mem_re),
-        .mem_we      (mem_mem_we),
+        .mem_we      (mem_mmio_we),
         .mem_addr    (mem_alu_result),
         .mem_wdata   (mem_rs2_data),
         .accel_rd    (systolic_m_rd),
@@ -427,7 +447,7 @@ module top_pipeline #(
     axi4_lite_io_manager IO_MGR (
         .io_active (is_uart),
         .mem_re    (mem_mem_re),
-        .mem_we    (mem_mem_we),
+        .mem_we    (mem_mmio_we),
         .mem_addr  (mem_alu_result),
         .mem_wdata (mem_rs2_data),
         .io_rd     (io_m_rd),
