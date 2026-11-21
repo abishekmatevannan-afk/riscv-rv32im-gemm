@@ -139,7 +139,14 @@ module tb_hazard_unit;
         check(0, 0, 1, 0, 0, 5'd0, 5'd0, 5'd0, 0, 0, 0, 0, 1, 1, "jump mispredicted flush");
         // jump_mispredict=0: correctly predicted jump, no flush
         check(0, 0, 0, 0, 0, 5'd0, 5'd0, 5'd0, 0, 0, 0, 0, 0, 0, "jump correct predict no flush");
-        check(1, 1, 0, 1, 0, 5'd1, 5'd1, 5'd2, 0, 0, 1, 1, 1, 1, "load-use + branch taken");
+        // A control hazard overrides the load-use PC stall: the instruction in
+        // ID is flushed anyway, and holding the PC would drop the redirect.
+        // (A load and a branch can't really share EX; the reachable case is a
+        // trap on a load, below. IF/ID's flush beats its stall.)
+        check(1, 1, 0, 1, 0, 5'd1, 5'd1, 5'd2, 0, 0, 0, 1, 1, 1, "load-use + branch taken: redirect wins");
+        // Known_limitations §26: a load that traps (or takes an interrupt) with a
+        // dependent instruction in ID. The PC must load mtvec, not stall.
+        check(1, 0, 0, 0, 0, 5'd1, 5'd1, 5'd2, 1, 0, 0, 1, 1, 1, "trap + load-use: PC redirects");
 
         // cache stall tests — flushes suppressed
         check(0, 1, 0, 1, 1, 5'd0, 5'd0, 5'd0, 0, 0, 1, 1, 0, 0, "branch taken + cache stall");

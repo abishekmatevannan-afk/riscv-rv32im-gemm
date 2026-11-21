@@ -63,7 +63,15 @@ module hazard_unit (
     // if_id_flush being high means EX has resolved a misprediction or jump --
     // the PC must take pc_next (the corrected target) immediately.
     // Holding pc_stall high here would trap the PC at the wrong address.
-    assign pc_stall     = load_use_hazard || any_stall || (icache_stall && !if_id_flush);
+    //
+    // The same goes for a load-use stall that lands on a control hazard. Only a
+    // trap can do that (a load in EX that faults, or an interrupt taken on it,
+    // with a dependent instruction in ID). The instruction in ID is flushed
+    // anyway, so there is nothing to wait for. Letting the load-use stall win
+    // froze the PC: the CSR file recorded the trap and cleared MIE, but fetch
+    // never redirected to mtvec and the handler never ran.
+    assign pc_stall     = (load_use_hazard && !control_hazard) || any_stall ||
+                          (icache_stall && !if_id_flush);
     assign if_id_stall  = load_use_hazard || any_stall || icache_stall;
     assign id_ex_stall  = any_stall;
     assign ex_mem_stall = any_stall;
