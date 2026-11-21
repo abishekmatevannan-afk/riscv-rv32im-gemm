@@ -1116,6 +1116,13 @@ module top_pipeline #(
 
     assign ext_irq = uart_irq;
 
+    // CSR write data: the rs1 register for CSRRW/CSRRS/CSRRC, and the 5-bit
+    // zero-extended immediate held in the rs1 field for CSRRWI/CSRRSI/CSRRCI
+    // (funct3[2] = 1). Feeding ex_fwd_a for both made `csrrsi x0, mstatus, 8`
+    // OR in the contents of x8 instead of the constant 8.
+    logic [31:0] ex_csr_wd;
+    assign ex_csr_wd = ex_csr_funct3[2] ? {27'd0, ex_rs1_addr} : ex_fwd_a;
+
     // CSR state commits only on the cycle the EX instruction advances. During a
     // stall the trap/CSR write is held, so an interrupt can't clear MIE mid-stall
     // and then vanish before the pipeline redirects to mtvec.
@@ -1124,7 +1131,7 @@ module top_pipeline #(
         .rst          (rst),
         .csr_we       (ex_csr_we && !ex_mem_stall),
         .csr_addr     (ex_csr_addr),
-        .csr_wd       (ex_fwd_a),
+        .csr_wd       (ex_csr_wd),
         .csr_funct3   (ex_csr_funct3[1:0]),
         .csr_rd       (csr_rd),
         .trap         (trap && !ex_mem_stall),
